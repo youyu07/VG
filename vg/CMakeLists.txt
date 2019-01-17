@@ -7,22 +7,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Vulkan REQUIRED)
 
 # core
-set(VG_CORE_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/core/instance.h)
+set(VG_CORE_SOURCE ./core/vulkan/instance.h
+    ./core/vulkan/device.h
+    ./core/vulkan/vk_mem_alloc.h)
 
-add_library(vgcore SHARED ${VG_CORE_SOURCE})
-
-target_include_directories(vgcore PRIVATE Vulkan::Vulkan)
-target_link_libraries(vgcore PRIVATE Vulkan::Vulkan)
-
-
-# util
 set(VG_UTIL_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/util/entry.h
     ${CMAKE_CURRENT_SOURCE_DIR}/util/entry.cpp)
 
-add_library(vgutil ${VG_CORE_SOURCE})
+add_library(vg SHARED vg.h vg.cpp ${VG_CORE_SOURCE} ${VG_UTIL_SOURCE})
 
-target_include_directories(vgutil PRIVATE Vulkan::Vulkan)
-target_link_libraries(vgutil PRIVATE Vulkan::Vulkan)
+target_include_directories(vg PRIVATE Vulkan::Vulkan ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(vg PRIVATE Vulkan::Vulkan)
 
 
 IF(MSVC)

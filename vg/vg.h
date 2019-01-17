@@ -3,22 +3,26 @@
 
 namespace vg
 {
-
-    class __IObject
+    class __declspec(dllexport) __IObject
     {
     public:
+        __IObject() {};
+
         template<typename T> T& getHandle()
         {
             return *static_cast<T*>(this);
         }
+
+        __IObject(const __IObject&) = delete;
+        void operator=(const __IObject&) = delete;
     };
 
     class ISwapchain;
     class IBuffer;
     class IImage;
     class IImageView;
-    class IShader;
-    class ICommand;
+    class IPipeline;
+    class IRenderContext;
 
     enum class Format : uint8_t
     {
@@ -44,11 +48,7 @@ namespace vg
         Index
     };
 
-    enum class ShaderLanguageType : uint8_t
-    {
-        GLSL,
-        SPRV
-    };
+    
 
     struct BufferDesc
     {
@@ -71,28 +71,27 @@ namespace vg
         uint32_t layer;
     };
 
-    struct SwapchainDesc
-    {
-        uint32_t imageCount = 2;
-    };
-
-    struct ShaderDesc
-    {
-        ShaderLanguageType language;
-    };
-
-    class IDevice : public __IObject
+    class __declspec(dllexport) IDevice : public __IObject
     {
     public:
-        IBuffer* createBuffer(const BufferDesc& desc,const void* data = nullptr);
-        IImage* createImage(const ImageDesc& desc,const void* data = nullptr);
-        ISwapchain* createSwapchain(const SwapchainDesc& desc);
-        IShader* createShader(const ShaderDesc& desc,const void* data);
+        IDevice();
+
+        static IDevice* create();
+
+        virtual ~IDevice() {};
+
+        virtual ISwapchain* createSwapchain(void* nativeHandle, uint32_t imageCount = 2) = 0;
+
+        virtual IBuffer* createBuffer(const BufferDesc& desc,const void* data = nullptr) = 0;
+        virtual IImage* createImage(const ImageDesc& desc,const void* data = nullptr) = 0;
+        virtual IRenderContext* createRenderContext() = 0;
     };
 
     class __IObjectWithDevice : public __IObject
     {
     public:
+        __IObjectWithDevice(IDevice* device) : m_device(device) {}
+
         template<typename T> T& getDevice(){
             return *static_cast<T*>(m_device);
         }
@@ -112,7 +111,7 @@ namespace vg
     class IBuffer : public __IObjectWithDevice
     {
     public:
-        virtual bool subData(uint32_t size,uint32_t offset,const void* data) = 0;
+        virtual bool updateData(uint32_t size,uint32_t offset,const void* data) = 0;
 
         uint32_t getSize() const
         {
@@ -164,9 +163,51 @@ namespace vg
         IImage* image = nullptr;
     };
 
-    class ICommand : public __IObjectWithDevice
+    enum class ShaderLanguageType : uint8_t
+    {
+        GLSL,
+        SPRV
+    };
+
+    enum class ShaderType : uint8_t
+    {
+        VERTEX,
+        FRAGMENT,
+        COMPUTER,
+        GEOMETRY
+    };
+
+    class IPipeline : public __IObjectWithDevice
     {
     public:
-        virtual void submit() = 0;
+        virtual void setShader(const ShaderType& type,const std::string& path,ShaderLanguageType language = ShaderLanguageType::SPRV);
+    };
+
+    struct DrawAttribute
+    {
+        enum class ValueType
+        {
+            vt_16,
+            vt_32
+        }indexType;
+        union
+        {
+            uint32_t numVertex = 0;
+            uint32_t numIndices;
+        };
+        uint32_t numInstance = 0;
+        bool isIndex = false;
+    };
+
+    class IRenderContext : public __IObjectWithDevice
+    {
+    public:
+        void setSize(uint32_t width, uint32_t height);
+        virtual void bindPipeline(IPipeline* pipeline);
+        virtual void bindVertexBuffers(uint32_t count, IBuffer* buf);
+        virtual void bindIndexBuffer(IBuffer* buf);
+        virtual void bindImageView(uint32_t bind, IImageView* view);
+        virtual void draw(const DrawAttribute& attribute);
+        virtual void submit();
     };
 }
