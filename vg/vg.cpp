@@ -16,5 +16,4 @@ namespace vg
 
         return dev;
     }
-
 }
