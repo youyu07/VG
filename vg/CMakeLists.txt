@@ -8,7 +8,8 @@ find_package(Vulkan REQUIRED)
 
 # core
 set(VG_CORE_SOURCE
-    core/vulkan/device.cpp)
+    render/device.cpp
+	render/buffer.cpp)
 
 set(VG_UTIL_SOURCE
     util/entry.cpp

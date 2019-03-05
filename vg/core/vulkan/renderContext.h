@@ -120,28 +120,18 @@ namespace vg::vk
 		PrimitiveType primitiveType = PrimitiveType::Triangles;
 	};
 
-	class Pipeline : public __VkObject<VkPipeline>
+	class Pipeline : public IPipeline, public __VkObject<VkPipeline>
 	{
-		VkDevice device = VK_NULL_HANDLE;
+		using IPipeline::IPipeline;
 	public:
-		Pipeline(VkDevice dev, VkRenderPass renderPass, VkPipelineLayout layout) : device(dev)
+		void setup(VkRenderPass renderPass, VkPipelineLayout layout)
 		{
 			std::vector<VkPipelineShaderStageCreateInfo> stages;
-			for (auto& it : desc.shaders)
+			for (auto& it : shaders)
 			{
 				VkPipelineShaderStageCreateInfo info = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO };
-
-				auto stage = Util::convertShaderType(it.first);
-
-				VkShaderModuleCreateInfo shaderInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
-				shaderInfo.codeSize = it.second.src.size();
-				shaderInfo.pCode = (uint32_t*)it.second.src.data();
-
-				VkShaderModule obj = VK_NULL_HANDLE;
-				vkCreateShaderModule(device, &shaderInfo, nullptr, &obj);
-
-				info.stage = stage;
-				info.module = obj;
+				info.stage = it.first;
+				info.module = it.second;
 				stages.push_back(info);
 			}
 
@@ -149,10 +139,10 @@ namespace vg::vk
 			std::vector<VkVertexInputAttributeDescription> vertexAttributes;
 			VkPipelineVertexInputStateCreateInfo vertexInfo = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
 			{
-				for (uint32_t binding = 0; binding < desc.vertexFormat.size(); binding++)
+				for (uint32_t binding = 0; binding < desc.vertexAttributes.size(); binding++)
 				{
 					uint32_t stride = 0;
-					for (auto& f : desc.vertexFormat.at(binding))
+					for (auto& f : desc.vertexAttributes.at(binding))
 					{
 						vertexAttributes.push_back({ static_cast<uint32_t>(vertexAttributes.size()),binding,Util::convertFormat(f),stride });
 						stride += Util::getFormatSize(f);
@@ -217,6 +207,7 @@ namespace vg::vk
 			info.pColorBlendState = &colorBlendState;
 			info.pDynamicState = &dynamicState;
 
+			auto& device = getDevice<Device>();
 			vkCreateGraphicsPipelines(device, VkPipelineCache(), 1, &info, nullptr, &handle);
 
 			for (auto& stage : stages)
@@ -224,8 +215,23 @@ namespace vg::vk
 				vkDestroyShaderModule(device, stage.module, nullptr);
 			}
 		}
+
+		virtual void setShader(const ShaderType& type, const std::string& src, ShaderLanguageType language = ShaderLanguageType::SPRV) override
+		{
+			auto& device = getDevice<Device>();
+			auto stage = Util::convertShaderType(type);
+
+			VkShaderModuleCreateInfo shaderInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
+			shaderInfo.codeSize = src.size();
+			shaderInfo.pCode = (uint32_t*)src.data();
+
+			VkShaderModule obj = VK_NULL_HANDLE;
+			vkCreateShaderModule(device, &shaderInfo, nullptr, &obj);
+
+			shaders[stage] = obj;
+		}
 	private:
-		PipelineDesc desc;
+		std::map<VkShaderStageFlagBits, VkShaderModule> shaders;
 	};
 
 	class RenderContext : public IRenderContext

@@ -1,6 +1,7 @@
 #pragma once
 #include <iostream>
 #include <vector>
+#include <map>
 
 namespace vg
 {
@@ -61,7 +62,7 @@ namespace vg
         Rgba32i,
     };
 
-    enum class BufferUsage : uint8_t
+    enum class BufferImageUsage : uint8_t
     {
         Undefined,
         Uniform,
@@ -71,12 +72,15 @@ namespace vg
         Vertex,
         Vertex_Dynamic,
         Index,
-        Index_Dynamic
+        Index_Dynamic,
+		Combined_Image_Sampler,
+		Sampler_Image,
+		Storage_Image
     };
 
     struct BufferDesc
     {
-        BufferUsage usage;
+		BufferImageUsage usage;
         uint32_t size;
     };
 
@@ -182,13 +186,13 @@ namespace vg
             return size;
         }
 
-        inline const BufferUsage getUsage() const
+        inline const BufferImageUsage getUsage() const
         {   
             return usage;
         }
     private:
         uint32_t size = 0;
-        BufferUsage usage;
+		BufferImageUsage usage;
     };
 
     enum class CompareOption : uint8_t
@@ -304,6 +308,8 @@ namespace vg
 		Geometry,
 		Fragment,
 		Computer,
+		AllGraphics,
+		All
     };
 
     enum class PrimitiveType
@@ -316,27 +322,41 @@ namespace vg
         Triangles_fan
     };
 
+	struct PipelineDesc
+	{
+		PrimitiveType primitiveType = PrimitiveType::Triangles;
+		std::map<uint32_t, std::vector<Format>> vertexAttributes;
+		std::map<uint32_t, BufferImageUsage> descriptorBindings;
+		bool enableColorBlend = false;
+	};
+
     class __declspec(dllexport) IPipeline : public __IObjectWithDevice
     {
 		using __IObjectWithDevice::__IObjectWithDevice;
     public:
         virtual void setShader(const ShaderType& type,const std::string& src,ShaderLanguageType language = ShaderLanguageType::SPRV) = 0;
 
-        virtual void setVertexAttribute(uint32_t binding, const std::vector<Format>& formats) = 0;
+		inline void setVertexAttribute(uint32_t binding, const std::vector<Format>& formats)
+		{
+			desc.vertexAttributes[binding] = formats;
+		}
+
+		inline void setDescriptorBinding(uint32_t binding, BufferImageUsage usage)
+		{
+			desc.descriptorBindings[binding] = usage;
+		}
 
         inline void setPrimitiveType(const PrimitiveType& type)
         {
-            primitiveType = type;
+            desc.primitiveType = type;
         }
 
-		inline void setSize(uint32_t w,uint32_t h)
+		inline void setEnableColorBlend(bool enable)
 		{
-			width = w;
-			height = h;
+			desc.enableColorBlend = enable;
 		}
     protected:
-        PrimitiveType primitiveType = PrimitiveType::Triangles;
-		uint32_t width, height;
+		PipelineDesc desc;
     };
 
     struct DrawAttribute
