@@ -1,6 +1,5 @@
-#include <Windows.h>
 #include <util/entry.h>
-
+#include "render/renderer.h"
 
 class Demo : public vg::Entry
 {
@@ -8,7 +7,7 @@ class Demo : public vg::Entry
 public:
 	virtual void init() override
 	{
-
+		renderer.setup(getInfo().handle);
 	}
 
 	virtual void update() override
@@ -18,13 +17,15 @@ public:
 
 	virtual void draw() override
 	{
-
+		renderer.draw();
 	}
 
+private:
+	vg::Renderer renderer;
 };
 
 
-int CALLBACK WinMain(HINSTANCE,HINSTANCE,LPSTR lpCmdLine, int nCmdShow)
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine, int iCmdShow)
 {
 	Demo demo;
 	demo.start();

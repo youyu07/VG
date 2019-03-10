@@ -17,17 +17,14 @@
 
 #include "core/log.h"
 
-
-VK_DEFINE_HANDLE(VmaAllocator);
-VK_DEFINE_HANDLE(VmaAllocation);
-
-namespace vg::vk
+namespace vg
 {
     
     template<typename Type> class __VkObject
     {
     public:
 		__VkObject() {}
+		__VkObject(Type& obj) : handle(obj) {}
 
         operator Type(){
             return handle;
@@ -45,9 +42,6 @@ namespace vg::vk
 
         __VkObject& operator = (const __VkObject&) = delete;
         __VkObject(const __VkObject&) = delete;
-
-        __VkObject&& operator = (const __VkObject&&) = default;
-        __VkObject(const __VkObject&&) = default;
     protected:
         Type handle = VK_NULL_HANDLE;
     };

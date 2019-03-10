@@ -1,5 +1,6 @@
 #pragma once
-#include "vg.h"
+
+#include <iostream>
 
 #if defined(WIN32)
 #include <Windows.h>
@@ -14,7 +15,7 @@ namespace vg
 		uint32_t height = 600;
 		const char* title = "vg";
 #if defined(WIN32)
-		HWND hWnd;
+		HWND handle;
 #endif
 	};
 
@@ -28,26 +29,23 @@ namespace vg
 
 		void start();
 
-		void setWindowSize(uint32_t width, uint32_t height)
+		inline void setWindowSize(uint32_t width, uint32_t height)
 		{
 			windowInfo.width = width;
 			windowInfo.height = height;
 		}
 
-		void setWindowTitle(const char* title)
+		inline void setWindowTitle(const char* title)
 		{
 			windowInfo.title = title;
 		}
 
-    private:
-        IDevice* device = nullptr;
-		WindowInfo windowInfo;
-
-		inline bool setupContext()
+		inline const WindowInfo& getInfo() const
 		{
-			device = IDevice::create();
-			return true;
+			return windowInfo;
 		}
+    private:
+		WindowInfo windowInfo;
     };
 
 }

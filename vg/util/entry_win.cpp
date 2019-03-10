@@ -20,12 +20,6 @@ namespace vg
 
 	void Entry::start()
 	{
-		if (!setupContext())
-		{
-			log_error("Faild to setup graphics context!");
-			return;
-		}
-
 		LPCSTR clsName = "vg";
 		WNDCLASS wc = {};
 		wc.style = CS_HREDRAW | CS_VREDRAW; // 设置style: 当窗口改变大小时就重新绘制窗口
@@ -41,7 +35,7 @@ namespace vg
 		::RegisterClass(&wc);
 
 		// 注册Window Class后，WinMain就调用CreateWindow函数来创建应用程序的Window
-		windowInfo.hWnd = ::CreateWindow(clsName,
+		windowInfo.handle = ::CreateWindow(clsName,
 			windowInfo.title,
 			WS_OVERLAPPEDWINDOW, // Window风格
 			CW_USEDEFAULT, // Window起点的X坐标
@@ -55,8 +49,8 @@ namespace vg
 		);
 
 		// 以下两条语句用来显示Window
-		ShowWindow(windowInfo.hWnd, SW_SHOWDEFAULT);
-		UpdateWindow(windowInfo.hWnd);
+		ShowWindow(windowInfo.handle, SW_SHOWDEFAULT);
+		UpdateWindow(windowInfo.handle);
 
 		init();
 
@@ -74,7 +68,7 @@ namespace vg
 			draw();
 		}
 
-		DestroyWindow(windowInfo.hWnd);
+		DestroyWindow(windowInfo.handle);
 		UnregisterClass("vg", wc.hInstance);
 	}
 }

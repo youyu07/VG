@@ -1,13 +1,8 @@
-cmake_minimum_required(VERSION 3.6)
-
-project(example)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-
 set(EXAMPLE_SOURCE main.cpp)
 
 add_executable(example WIN32 ${EXAMPLE_SOURCE})
 target_include_directories(example PRIVATE ../vg)
 target_link_libraries(example PRIVATE vg)
-#add_dependencies(example vg)
+add_dependencies(example vg)
+
+install(TARGETS example RUNTIME DESTINATION bin)

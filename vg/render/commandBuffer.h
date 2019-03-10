@@ -25,6 +25,8 @@ namespace vg::vk
 			if(handle != VK_NULL_HANDLE)vkDestroyCommandPool(device, handle, nullptr);
 		}
 
+		CommandBuffer* createCommandBuffer();
+
 		inline const uint32_t getFamilyIndex() const
 		{
 			return queueFamilyIndex;
@@ -57,18 +59,20 @@ namespace vg::vk
 			if (handle != VK_NULL_HANDLE)vkFreeCommandBuffers(device, *pool, 1,&handle);
 		}
 
-		void submit(bool waitIdle = true) {
+		void submit(VkSemaphore wait = VK_NULL_HANDLE,VkSemaphore signal = VK_NULL_HANDLE,const VkPipelineStageFlags waitMask = 0,VkFence fence = VK_NULL_HANDLE) 
+		{
 			auto queue = pool->getQueue();
 
 			VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
 			submitInfo.commandBufferCount = 1;
 			submitInfo.pCommandBuffers = &handle;
+			submitInfo.waitSemaphoreCount = wait == VK_NULL_HANDLE ? 0 : 1;
+			submitInfo.pWaitSemaphores = wait == VK_NULL_HANDLE ? nullptr : &wait;
+			submitInfo.signalSemaphoreCount = signal == VK_NULL_HANDLE ? 0 : 1;
+			submitInfo.pSignalSemaphores = signal == VK_NULL_HANDLE ? nullptr : &signal;
+			submitInfo.pWaitDstStageMask = waitMask == 0 ? nullptr : &waitMask;
 
-			vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-
-			if (waitIdle) {
-				vkQueueWaitIdle(queue);
-			}
+			vkQueueSubmit(queue, 1, &submitInfo, fence);
 		}
 
 		void begin(VkCommandBufferUsageFlags flag = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT)
@@ -83,6 +87,49 @@ namespace vg::vk
 		{
 			vkEndCommandBuffer(handle);
 		}
+
+		void beginRenderPass(VkRenderPass renderPass, VkFramebuffer frameBuffer,const VkRect2D& area,const std::vector<VkClearValue>& clearValue)
+		{
+			VkRenderPassBeginInfo info = { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
+			info.clearValueCount = static_cast<uint32_t>(clearValue.size());
+			info.pClearValues = clearValue.data();
+			info.framebuffer = frameBuffer;
+			info.renderPass = renderPass;
+			info.renderArea = area;
+
+			vkCmdBeginRenderPass(handle, &info, VK_SUBPASS_CONTENTS_INLINE);
+		}
+
+		void endRenderPass()
+		{
+			vkCmdEndRenderPass(handle);
+		}
+
+		void bindPipeline(VkPipeline pipeline, VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS)
+		{
+			vkCmdBindPipeline(handle, bindPoint, pipeline);
+		}
+
+		void draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex = 0, uint32_t firstInstance = 0)
+		{
+			vkCmdDraw(handle, vertexCount, instanceCount, firstVertex, firstInstance);
+		}
+
+		template<typename T> void setViewport(T width,T height)
+		{
+			VkViewport viewport = {0.0f,static_cast<float>(height),static_cast<float>(width),-static_cast<float>(height),0.0f,1.0f};
+			vkCmdSetViewport(handle, 0, 1, &viewport);
+		}
+
+		template<typename T1,typename T2> void setScissor(T1 x,T1 y,T2 width,T2 height)
+		{
+			VkRect2D scissor = { {static_cast<int32_t>(x),static_cast<int32_t>(y)},{static_cast<uint32_t>(width),static_cast<uint32_t>(height)} };
+			vkCmdSetScissor(handle, 0, 1, &scissor);
+		}
 	};
 
+
+	inline CommandBuffer* CommandPool::createCommandBuffer() {
+		return new CommandBuffer(device, this);
+	}
 } // name

@@ -1,21 +1,25 @@
-cmake_minimum_required(VERSION 3.6)
-
-project(vg)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 find_package(Vulkan REQUIRED)
 
-# core
-set(VG_CORE_SOURCE
-    render/device.cpp
-	render/buffer.cpp)
 
-set(VG_UTIL_SOURCE
-    util/entry.cpp
+set(Vulkan_DIR "$ENV{VULKAN_SDK}")
+
+
+set(VG_SOURCE
+    render/device.cpp
+	render/renderer.cpp
+	render/shader.cpp
+	util/entry.cpp
 	util/entry_win.cpp)
 
-add_library(vg SHARED vg.cpp ${VG_CORE_SOURCE} ${VG_UTIL_SOURCE})
+add_library(vg SHARED ${VG_SOURCE})
 
 target_include_directories(vg PRIVATE Vulkan::Vulkan ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(vg PRIVATE Vulkan::Vulkan)
+target_link_libraries(vg PRIVATE Vulkan::Vulkan ${Shaderc_DIR}/lib/shaderc_shared.lib)
+
+add_custom_command(TARGET vg POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${Shaderc_DIR}/bin/shaderc_shared.dll"
+        $<TARGET_FILE_DIR:vg>)
+
+install(TARGETS vg RUNTIME DESTINATION bin)
+install(FILES "${Shaderc_DIR}/bin/shaderc_shared.dll" RUNTIME DESTINATION bin)
