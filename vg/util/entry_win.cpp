@@ -3,10 +3,14 @@
 
 #if defined(WIN32)
 
+#include <imgui/imgui_win32.h>
+
 namespace vg
 {
 	LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
+		ImGui::win32_WndProcHandler(hwnd, message, wParam, lParam);
+
 		switch (message)
 		{
 		case WM_DESTROY:
@@ -52,6 +56,8 @@ namespace vg
 		ShowWindow(windowInfo.handle, SW_SHOWDEFAULT);
 		UpdateWindow(windowInfo.handle);
 
+		ImGui::win32_Init(windowInfo.handle);
+
 		init();
 
 		MSG msg = {};
@@ -63,10 +69,14 @@ namespace vg
 				DispatchMessage(&msg);
 				continue;
 			}
+			ImGui::win32_NewFrame();
 
 			update();
+
 			draw();
 		}
+
+		ImGui::win32_Shutdown();
 
 		DestroyWindow(windowInfo.handle);
 		UnregisterClass("vg", wc.hInstance);

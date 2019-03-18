@@ -10,6 +10,7 @@ namespace vg::vk
 	class Buffer;
 	class Image;
 	class ImageView;
+	class Sampler;
 	class Swapchain;
 	class Semaphore;
 	class Fence;
@@ -18,6 +19,8 @@ namespace vg::vk
 	class Surface;
 	class PipelineLayout;
 	class Pipeline;
+	class DescriptorSetLayout;
+	class DescriptorSet;
 
 	enum class MemoryUsage
 	{
@@ -99,6 +102,10 @@ namespace vg::vk
 
 		Image* createImage(const ImageInfo& info);
 
+		Sampler* createSampler(const SamplerInfo& info);
+
+		Buffer* createBuffer(const BufferInfo& info);
+
 		Swapchain* createSwapchain(const SwapchainInfo& info);
 
 		class CommandBuffer* createCommandBuffer();
@@ -119,6 +126,10 @@ namespace vg::vk
 
 		Pipeline* createPipeline(const PipelineInfo& info);
 
+		DescriptorSetLayout* createDescriptorSetLayout(const std::vector<VkDescriptorSetLayoutBinding>& bindings);
+
+		DescriptorSet* createDescriptorSet(const VkDescriptorSetLayout* layout);
+
 		inline VmaAllocator getAllocator() const {
 			return allocator;
 		}
@@ -133,6 +144,11 @@ namespace vg::vk
 		inline VkQueue getGraphicsQueue() const
 		{
 			return graphicsQueue;
+		}
+
+		inline VkDescriptorPool getDescriptorPool() const
+		{
+			return descriptorPool;
 		}
     private:
         class Instance* instance;
@@ -185,39 +201,6 @@ namespace vg::vk
 	};
 
 	/*
-	* vertex buffer
-	*/
-	class VertexBuffer : public Buffer
-	{
-		using Buffer::Buffer;
-	public:
-		VertexBuffer(Device* device, uint32_t size, const std::vector<std::vector<VkFormat>>& formats);
-
-		std::vector<VkVertexInputBindingDescription> getBindings()
-		{
-			return bindings;
-		}
-
-		std::vector<VkVertexInputAttributeDescription> getAttributes()
-		{
-			return attributes;
-		}
-	private:
-		std::vector<VkVertexInputBindingDescription> bindings;
-		std::vector<VkVertexInputAttributeDescription> attributes;
-	};
-
-	/*
-	* index buffer
-	*/
-	class IndexBuffer : public Buffer
-	{
-	public:
-		IndexBuffer();
-
-	};
-
-	/*
 	* image
 	*/
 	class Image : public __VkObject<VkImage>
@@ -226,7 +209,9 @@ namespace vg::vk
 		Image(VkImage img, const ImageInfo& info) : __VkObject(img), info(info) {}
 		Image(Device* device, const ImageInfo& info);
 
-		void transitionImageLayout(VkImage img, VkImageLayout oldLayout, VkImageLayout newLayout);
+		ImageView* createView(VkImageViewType type = VK_IMAGE_VIEW_TYPE_2D);
+
+		void update(const void* data);
 
 		const ImageInfo& getInfo() const
 		{
@@ -252,6 +237,17 @@ namespace vg::vk
 		VkImageViewType type;
 	};
 
+	/*
+	* sampler
+	*/
+	class Sampler : public __VkObject<VkSampler>
+	{
+	public:
+		Sampler(Device* device, const SamplerInfo& info);
+	private:
+		Device* device = nullptr;
+		SamplerInfo info = {};
+	};
 
 	/*
 	* semaphore
@@ -424,5 +420,36 @@ namespace vg::vk
 	private:
 		class Device* device = nullptr;
 		PipelineInfo info = {};
+	};
+
+	/*
+	* descriptor set layou
+	*/
+	class DescriptorSetLayout : public __VkObject<VkDescriptorSetLayout>
+	{
+	public:
+		DescriptorSetLayout(Device* device, const std::vector<VkDescriptorSetLayoutBinding>& bindings);
+	private:
+		class Device* device = nullptr;
+	};
+
+	/*
+	* descriptor set
+	*/
+	class DescriptorSet : public __VkObject<VkDescriptorSet>
+	{
+	public:
+		DescriptorSet(Device* device, const VkDescriptorSetLayout* layout);
+
+		struct WriteInfo
+		{
+			VkDescriptorType type;
+			VkDescriptorImageInfo* imageInfo = nullptr;
+			VkDescriptorBufferInfo* bufferInfo = nullptr;
+		};
+
+		void update(const std::vector<WriteInfo>& writeInfo);
+	private:
+		class Device* device = nullptr;
 	};
 }

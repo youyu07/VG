@@ -40,6 +40,11 @@ namespace vg
             return handle != VK_NULL_HANDLE;
         }
 
+		const Type* getPtr() const
+		{
+			return &handle;
+		}
+
         __VkObject& operator = (const __VkObject&) = delete;
         __VkObject(const __VkObject&) = delete;
     protected:

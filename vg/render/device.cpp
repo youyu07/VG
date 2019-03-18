@@ -116,6 +116,16 @@ namespace vg::vk
 		return new Image(this, info);
 	}
 
+	Sampler* Device::createSampler(const SamplerInfo& info)
+	{
+		return new Sampler(this, info);
+	}
+
+	Buffer* Device::createBuffer(const BufferInfo& info)
+	{
+		return new Buffer(this, info);
+	}
+
 	Swapchain* Device::createSwapchain(const SwapchainInfo& info)
 	{
 		return new Swapchain(this, info);
@@ -169,6 +179,16 @@ namespace vg::vk
 		return new Pipeline(this, info);
 	}
 
+	DescriptorSetLayout* Device::createDescriptorSetLayout(const std::vector<VkDescriptorSetLayoutBinding>& bindings)
+	{
+		return new DescriptorSetLayout(this, bindings);
+	}
+
+	DescriptorSet* Device::createDescriptorSet(const VkDescriptorSetLayout* layout)
+	{
+		return new DescriptorSet(this, layout);
+	}
+
 	VkPhysicalDevice Device::getPhysicalDevice()
 	{
 		return *physicalDevice;
@@ -207,29 +227,25 @@ namespace vg::vk
 
 	void Buffer::update(uint32_t size, const void* data)
 	{
-		auto ptr = map();
-		memcpy(ptr, data, size);
-		unmap();
-	}
+		if (info.memoryUsage == MemoryUsage::GPU) {
+			const BufferInfo& stagingInfo = {info.size,VK_BUFFER_USAGE_TRANSFER_SRC_BIT,MemoryUsage::CPU };
+			auto staging = device->createBuffer(stagingInfo);
+			staging->update(size, data);
 
+			auto cmd = device->createCommandBuffer();
+			cmd->begin();
+			VkBufferCopy region = {0,0,size};
+			vkCmdCopyBuffer(*cmd, *staging, handle, 1, &region);
+			cmd->end();
+			cmd->submit();
+			cmd->waitIdle();
 
-	/*
-	* vertex buffer
-	*/
-	VertexBuffer::VertexBuffer(Device* device, uint32_t size, const std::vector<std::vector<VkFormat>>& formats)
-		: Buffer(device, { size,VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,MemoryUsage::GPU })
-	{
-		uint32_t location = 0;
-		for (uint32_t i = 0; i < formats.size(); i++)
-		{
-			auto& fs = formats[i];
-			uint16_t stride = 0;
-			for (auto& f : fs)
-			{
-				attributes.push_back({ location, i,f,stride });
-				stride += util::getFormatSize(f);
-			}
-			bindings.push_back({ i,stride,VK_VERTEX_INPUT_RATE_VERTEX });
+			delete staging;
+		}
+		else {
+			auto ptr = map();
+			memcpy(ptr, data, size);
+			unmap();
 		}
 	}
 
@@ -255,29 +271,47 @@ namespace vg::vk
 		vmaCreateImage(device->getAllocator(), &createInfo, &allocCreateInfo, &handle, &allocation, nullptr);
 	}
 
-	void Image::transitionImageLayout(VkImage img, VkImageLayout oldLayout, VkImageLayout newLayout)
+	ImageView* Image::createView(VkImageViewType type)
 	{
-		VkImageMemoryBarrier barrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
-		barrier.srcAccessMask = 0;
-		barrier.dstAccessMask = 0;
-		barrier.oldLayout = oldLayout;
-		barrier.newLayout = newLayout;
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = img;
+		return new ImageView(device, this, type);
+	}
 
-		barrier.subresourceRange.aspectMask = util::getImageAspectFlags(info.format);
-		barrier.subresourceRange.baseMipLevel = 0;
-		barrier.subresourceRange.levelCount = info.mipLevels;
-		barrier.subresourceRange.baseArrayLayer = 0;
-		barrier.subresourceRange.layerCount = info.layers;
+	void Image::update(const void* data)
+	{
+		const BufferInfo& bufInfo = { info.width * info.height * util::getFormatSize(info.format),VK_BUFFER_USAGE_TRANSFER_SRC_BIT,MemoryUsage::CPU };
+		auto buf = device->createBuffer(bufInfo);
+		buf->update(bufInfo.size, data);
 
-		// TODO
 		auto cmd = device->createCommandBuffer();
 		cmd->begin();
-		vkCmdPipelineBarrier(*cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+		VkImageMemoryBarrier barrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = handle;
+		barrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT,0,info.mipLevels,0,info.layers };
+		vkCmdPipelineBarrier(*cmd, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
+
+		VkBufferImageCopy region = {};
+		region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		region.imageSubresource.layerCount = 1;
+		region.imageExtent = { info.width,info.height,1 };
+		vkCmdCopyBufferToImage(*cmd, *buf, handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		vkCmdPipelineBarrier(*cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
+
 		cmd->end();
 		cmd->submit();
+		cmd->waitIdle();
+
+		delete buf;
 	}
 
 
@@ -295,6 +329,26 @@ namespace vg::vk
 		vkCreateImageView(*device, &info, nullptr, &handle);
 	}
 
+	/*
+	* sampler
+	*/
+	Sampler::Sampler(Device* device, const SamplerInfo& info)
+	{
+		VkSamplerCreateInfo createInfo = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+		createInfo.addressModeU = createInfo.addressModeV = createInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		createInfo.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+		createInfo.minLod = -1000.f;
+		createInfo.maxLod = 1000.f;
+		createInfo.unnormalizedCoordinates = VK_FALSE;
+		createInfo.minFilter = createInfo.magFilter = VK_FILTER_LINEAR;
+		createInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+		createInfo.anisotropyEnable = VK_FALSE;
+		createInfo.maxAnisotropy = 1.0f;
+		createInfo.compareEnable = VK_FALSE;
+		createInfo.compareOp = VK_COMPARE_OP_NEVER;
+
+		vkCreateSampler(*device, &createInfo, nullptr, &handle);
+	}
 
 	/*
 	* swapchain
@@ -523,7 +577,7 @@ namespace vg::vk
 		viewportState.scissorCount = 1;
 
 		VkPipelineRasterizationStateCreateInfo rasterizationState = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
-		rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;
+		rasterizationState.cullMode = VK_CULL_MODE_NONE;
 		rasterizationState.polygonMode = VK_POLYGON_MODE_FILL;
 		rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 		rasterizationState.lineWidth = 1.0f;
@@ -538,9 +592,9 @@ namespace vg::vk
 
 		VkPipelineColorBlendStateCreateInfo colorBlendState = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
 		VkPipelineColorBlendAttachmentState colorBlendAttachment = {
-			VK_FALSE,
-			VK_BLEND_FACTOR_ZERO,VK_BLEND_FACTOR_ONE,VK_BLEND_OP_ADD,
-			VK_BLEND_FACTOR_SRC_ALPHA,VK_BLEND_FACTOR_DST_ALPHA,VK_BLEND_OP_ADD,
+			VK_TRUE,
+			VK_BLEND_FACTOR_SRC_ALPHA,VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,VK_BLEND_OP_ADD,
+			VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,VK_BLEND_FACTOR_ZERO,VK_BLEND_OP_ADD,
 			0xf
 		};
 		colorBlendState.attachmentCount = 1;
@@ -572,5 +626,45 @@ namespace vg::vk
 		{
 			delete it;
 		}
+	}
+
+	/*
+	* descriptor set layou
+	*/
+	DescriptorSetLayout::DescriptorSetLayout(Device* device, const std::vector<VkDescriptorSetLayoutBinding>& bindings) : device(device)
+	{
+		VkDescriptorSetLayoutCreateInfo createInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+		createInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+		createInfo.pBindings = bindings.data();
+
+		vkCreateDescriptorSetLayout(*device, &createInfo, nullptr, &handle);
+	}
+
+	/*
+	* descriptor set
+	*/
+	DescriptorSet::DescriptorSet(Device* device, const VkDescriptorSetLayout* layout) : device(device)
+	{
+		VkDescriptorSetAllocateInfo allocateInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+		allocateInfo.descriptorSetCount = 1;
+		allocateInfo.descriptorPool = device->getDescriptorPool();
+		allocateInfo.pSetLayouts = layout;
+		vkAllocateDescriptorSets(*device, &allocateInfo, &handle);
+	}
+
+	void DescriptorSet::update(const std::vector<DescriptorSet::WriteInfo>& writeInfo)
+	{
+		std::vector<VkWriteDescriptorSet> writes;
+		for (auto& it : writeInfo)
+		{
+			VkWriteDescriptorSet desc = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+			desc.dstSet = handle;
+			desc.descriptorCount = 1;
+			desc.descriptorType = it.type;
+			desc.pImageInfo = it.imageInfo;
+			desc.pBufferInfo = it.bufferInfo;
+			writes.push_back(desc);
+		}
+		vkUpdateDescriptorSets(*device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 	}
 } // 

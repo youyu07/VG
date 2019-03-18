@@ -75,6 +75,11 @@ namespace vg::vk
 			vkQueueSubmit(queue, 1, &submitInfo, fence);
 		}
 
+		void waitIdle()
+		{
+			vkQueueWaitIdle(pool->getQueue());
+		}
+
 		void begin(VkCommandBufferUsageFlags flag = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT)
 		{
 			VkCommandBufferBeginInfo info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
@@ -110,14 +115,37 @@ namespace vg::vk
 			vkCmdBindPipeline(handle, bindPoint, pipeline);
 		}
 
-		void draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex = 0, uint32_t firstInstance = 0)
+		void bindVertex(const std::vector<VkBuffer>& buffers,const std::vector<VkDeviceSize>& offsets)
 		{
-			vkCmdDraw(handle, vertexCount, instanceCount, firstVertex, firstInstance);
+			vkCmdBindVertexBuffers(handle, 0, static_cast<uint32_t>(buffers.size()), buffers.data(), offsets.data());
 		}
 
-		template<typename T> void setViewport(T width,T height)
+		void bindIndex(VkBuffer buffer,VkIndexType type) 
 		{
-			VkViewport viewport = {0.0f,static_cast<float>(height),static_cast<float>(width),-static_cast<float>(height),0.0f,1.0f};
+			vkCmdBindIndexBuffer(handle, buffer, 0, type);
+		}
+
+		void bindDescriptorSet(VkPipelineLayout layout,const std::vector<VkDescriptorSet>& sets,const std::vector<uint32_t>& offsets)
+		{
+			vkCmdBindDescriptorSets(handle, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, static_cast<uint32_t>(sets.size()), sets.data(), static_cast<uint32_t>(offsets.size()), offsets.data());
+		}
+
+		void draw(uint32_t count, uint32_t instanceCount, uint32_t firstVertex = 0, uint32_t firstInstance = 0)
+		{
+			vkCmdDraw(handle, count, instanceCount, firstVertex, firstInstance);
+		}
+
+		void drawIndex(uint32_t count, uint32_t instanceCount,uint32_t firstIndex = 0, int32_t vertexOffset = 0, uint32_t firstInstance = 0)
+		{
+			vkCmdDrawIndexed(handle, count, instanceCount, firstIndex, vertexOffset, firstInstance);
+		}
+
+		template<typename T> void setViewport(T width,T height,bool filpY = false)
+		{
+			VkViewport viewport = {0.0f,0.0f,static_cast<float>(width),static_cast<float>(height),0.0f,1.0f};
+			if (filpY) {
+				viewport = { 0.0f,static_cast<float>(height),static_cast<float>(width),-static_cast<float>(height),0.0f,1.0f };
+			}
 			vkCmdSetViewport(handle, 0, 1, &viewport);
 		}
 

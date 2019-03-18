@@ -1,15 +1,18 @@
 find_package(Vulkan REQUIRED)
 
 
-set(Vulkan_DIR "$ENV{VULKAN_SDK}")
-
-
 set(VG_SOURCE
+	imgui/imgui.cpp
+	imgui/imgui_demo.cpp
+	imgui/imgui_draw.cpp
+	imgui/imgui_widgets.cpp
+	imgui/imgui_win32.cpp
     render/device.cpp
 	render/renderer.cpp
 	render/shader.cpp
 	util/entry.cpp
-	util/entry_win.cpp)
+	util/entry_win.cpp
+	util/geometry.cpp)
 
 add_library(vg SHARED ${VG_SOURCE})
 

@@ -1,10 +1,11 @@
 #pragma once
+
 #include <vulkan/vulkan.h>
 
-namespace vg::util
+namespace vg::vk::util
 {
 
-	uint32_t getFormatSize(VkFormat format)
+	inline uint32_t getFormatSize(VkFormat format)
 	{
 		switch (format)
 		{
@@ -154,7 +155,7 @@ namespace vg::util
 		return 0;
 	}
 	
-	const VkImageAspectFlags getImageAspectFlags(VkFormat format)
+	inline const VkImageAspectFlags getImageAspectFlags(VkFormat format)
 	{
 		switch (format)
 		{

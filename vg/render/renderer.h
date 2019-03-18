@@ -3,25 +3,24 @@
 #include <Windows.h>
 #endif
 
+#include <vector>
+#include <unordered_map>
+#include "geometryInfo.h"
+
 namespace vg
 {
+	using DeviceHandle = void*;
 
-	namespace vk
-	{
-		class Device;
-		class Swapchain;
-	}
-
-	class __declspec(dllexport) Renderer
+	class Renderer
 	{
 	public:
 		void setup(HWND windowHandle);
 
 		void draw();
+
+		DeviceHandle createGeometry(const GeometryBufferInfo& geometry);
 	private:
-		vk::Device* device = nullptr;
-		vk::Swapchain* swapchain = nullptr;
-		struct RenderState* renderState = nullptr;
+		class RenderImpl* impl = nullptr;
 	};
 
 }
