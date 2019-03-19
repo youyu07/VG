@@ -22,6 +22,30 @@ namespace vg
 		VkIndexType indexType = VK_INDEX_TYPE_UINT16;
 		uint32_t count = 0;
 
+		void draw(vk::CommandBuffer* cmd)
+		{
+			std::vector<VkBuffer> buffers;
+			if (position) {
+				buffers.push_back(*position);
+			}
+			if (normal) {
+				buffers.push_back(*normal);
+			}
+			if (texcoord) {
+				buffers.push_back(*texcoord);
+			}
+
+			const auto offset = std::vector<VkDeviceSize>(buffers.size(),0);
+			cmd->bindVertex(buffers, offset);
+			if (indices) {
+				cmd->bindIndex(*indices, indexType);
+				cmd->drawIndex(count, 1);
+			}
+			else {
+				cmd->draw(count, 1);
+			}
+		}
+
 		VertexInfo getBindingInfo()
 		{
 			std::vector<VkVertexInputBindingDescription> b;

@@ -13,8 +13,9 @@ public:
 
 		auto geometry = vg::SimpleGeometry::createSphere();
 
-		const vg::GeometryBufferInfo info = { 
+		const vg::GeometryBufferInfo info = {
 			{vg::GeometryBufferInfo::Format::rgb32, static_cast<uint32_t>(geometry.position.size()), geometry.position.data()},
+			{vg::GeometryBufferInfo::Format::rgb32, static_cast<uint32_t>(geometry.normal.size()), geometry.normal.data()},
 			{vg::GeometryBufferInfo::Format::r16, static_cast<uint32_t>(geometry.indices.size()), geometry.indices.data()}
 		};
 		renderer.createGeometry(info);

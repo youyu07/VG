@@ -12,7 +12,7 @@ namespace vg
 	struct WindowInfo
 	{
 		uint32_t width = 1280;
-		uint32_t height = 720;
+		uint32_t height = 960;
 		const char* title = "vg";
 #if defined(WIN32)
 		HWND handle;

@@ -33,10 +33,14 @@ namespace vg
 			data[Type::position] = position;
 		}
 
-		GeometryBufferInfo(const Data& position,const Data& index)
+		GeometryBufferInfo(const Data& position,const Data& index) : GeometryBufferInfo(position)
 		{
-			data[Type::position] = position;
 			data[Type::index] = index;
+		}
+
+		GeometryBufferInfo(const Data& position, const Data& normal, const Data& index) : GeometryBufferInfo(position,index)
+		{
+			data[Type::normal] = normal;
 		}
 
 		const Data& getData(Type type) const {

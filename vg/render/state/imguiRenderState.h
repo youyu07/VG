@@ -7,6 +7,9 @@ namespace vg
 	class ImguiRenderState : public RenderState
 	{
 	public:
+		vk::Swapchain* swapchain = nullptr;
+		vk::RenderPass* renderPass = nullptr;
+
 		vk::Sampler* sampler = nullptr;
 
 		vk::DescriptorSetLayout* setLayout = nullptr;
@@ -20,7 +23,76 @@ namespace vg
 		vk::Buffer* vertexBuffer = nullptr;
 		vk::Buffer* indexBuffer = nullptr;
 
-		ImguiRenderState(vk::Device* device, vk::RenderPass* renderPass) : RenderState(device)
+		std::vector<vk::FrameBuffer*> frameBuffers;
+		std::vector<vk::CommandBuffer*> commandBuffers;
+
+		ImguiRenderState(vk::Device* device, vk::Swapchain* swapchain) : RenderState(device), swapchain(swapchain)
+		{
+			VkAttachmentDescription colorDescription = {
+				0,
+				swapchain->getColorFormat(),
+				VK_SAMPLE_COUNT_1_BIT,
+				VK_ATTACHMENT_LOAD_OP_CLEAR,
+				VK_ATTACHMENT_STORE_OP_STORE,
+				VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+				VK_ATTACHMENT_STORE_OP_DONT_CARE,
+				VK_IMAGE_LAYOUT_UNDEFINED,
+				VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+			};
+
+			VkAttachmentReference colorAttachment = { 0,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+
+			VkSubpassDescription subpass = {
+				0,									//flag
+				VK_PIPELINE_BIND_POINT_GRAPHICS,	//pipelineBindPoint
+				0,									//inputAttachmentCount
+				nullptr,							//pInputAttachments
+				1,									//colorAttachmentCount
+				&colorAttachment,					//pColorAttachments
+				nullptr,							//pResolveAttachments
+				nullptr,							//pDepthStencilAttachment
+				0,									//preserveAttachmentCount
+				nullptr								//pPreserveAttachments
+			};
+
+			const vk::RenderPassInfo renderPassInfo = { {colorDescription},{subpass}, {} };
+			renderPass = device->createRenderPass(renderPassInfo);
+
+			setupPipeline();
+
+			//create frame buffer
+			for (auto& v : swapchain->getImageViews())
+			{
+				std::vector<VkImageView> attachment = { *v };
+				const vk::FrameBufferInfo frameBufferInfo = { swapchain->getWidth(),swapchain->getHeight(),*renderPass,attachment };
+				frameBuffers.push_back(device->createFrameBuffer(frameBufferInfo));
+
+				commandBuffers.push_back(device->createCommandBuffer());
+			}
+
+			ImGuiIO& io = ImGui::GetIO();
+
+			unsigned char* pixels;
+			int width, height;
+			io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+			size_t upload_size = width * height * 4 * sizeof(char);
+
+			vk::ImageInfo imageInfo = { static_cast<uint32_t>(width),static_cast<uint32_t>(height),VK_FORMAT_R8G8B8A8_UNORM,1,1,VK_IMAGE_TYPE_2D,VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT };
+			tex = device->createImage(imageInfo);
+			texView = tex->createView();
+			tex->update(pixels);
+
+			descriptorSet = device->createDescriptorSet(setLayout->getPtr());
+
+			VkDescriptorImageInfo descriptorImageInfo = { *sampler,*texView,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+			const vk::DescriptorSet::WriteInfo writeInfo = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,&descriptorImageInfo,nullptr };
+			descriptorSet->update({ writeInfo });
+
+			// Store our identifier
+			io.Fonts->TexID = (ImTextureID)(intptr_t)tex;
+		}
+
+		void setupPipeline()
 		{
 			const std::string vert =
 				"#version 450 core\n"
@@ -88,27 +160,6 @@ namespace vg
 			};
 
 			pipeline = device->createPipeline(info);
-
-			ImGuiIO& io = ImGui::GetIO();
-
-			unsigned char* pixels;
-			int width, height;
-			io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
-			size_t upload_size = width * height * 4 * sizeof(char);
-
-			vk::ImageInfo imageInfo = { static_cast<uint32_t>(width),static_cast<uint32_t>(height),VK_FORMAT_R8G8B8A8_UNORM,1,1,VK_IMAGE_TYPE_2D,VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT };
-			tex = device->createImage(imageInfo);
-			texView = tex->createView();
-			tex->update(pixels);
-
-			descriptorSet = device->createDescriptorSet(setLayout->getPtr());
-
-			VkDescriptorImageInfo descriptorImageInfo = { *sampler,*texView,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
-			const vk::DescriptorSet::WriteInfo writeInfo = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,&descriptorImageInfo,nullptr };
-			descriptorSet->update({ writeInfo });
-
-			// Store our identifier
-			io.Fonts->TexID = (ImTextureID)(intptr_t)tex;
 		}
 
 		void createOrResizeBuffer(ImDrawData* data)
@@ -155,65 +206,86 @@ namespace vg
 			}
 		}
 
-		void draw(vk::CommandBuffer* cmd)
+		vk::CommandBuffer*& draw(uint32_t index)
 		{
+			auto& cmd = commandBuffers[index];
+			auto& frameBuffer = frameBuffers[index];
+			cmd->begin();
+
+			const std::vector<VkClearValue> clearValue = {
+				{0.0f,0.0f,0.0f,1.0f}
+			};
+
+			const auto extent = swapchain->getExtent();
+			const VkRect2D renderArea = { {},extent };
+			cmd->beginRenderPass(*renderPass, *frameBuffer, renderArea, clearValue);
+
+			cmd->setViewport(extent.width, extent.height);
+			cmd->setScissor(0, 0, extent.width, extent.height);
+
 			auto data = ImGui::GetDrawData();
 			int width = (int)(data->DisplaySize.x * data->FramebufferScale.x);
 			int height = (int)(data->DisplaySize.y * data->FramebufferScale.y);
-			if (width <= 0 || height <= 0 || data->TotalVtxCount == 0) return;
 
-			createOrResizeBuffer(data);
-			cmd->bindPipeline(*pipeline);
+			if (width >0 && height > 0 && data->TotalVtxCount > 0) {
+				createOrResizeBuffer(data);
+				cmd->bindPipeline(*pipeline);
 
-			std::vector<VkDeviceSize> offsets = { 0 };
-			cmd->bindVertex({ *vertexBuffer }, offsets);
-			cmd->bindIndex(*indexBuffer, VK_INDEX_TYPE_UINT16);
+				std::vector<VkDeviceSize> offsets = { 0 };
+				cmd->bindVertex({ *vertexBuffer }, offsets);
+				cmd->bindIndex(*indexBuffer, VK_INDEX_TYPE_UINT16);
 
-			cmd->bindDescriptorSet(*layout, { *descriptorSet }, {});
+				cmd->bindDescriptorSet(*layout, { *descriptorSet }, {});
 
-			float pushData[4];
-			pushData[0] = 2.0f / data->DisplaySize.x;
-			pushData[1] = 2.0f / data->DisplaySize.y;
-			pushData[2] = -1.0f - data->DisplayPos.x * pushData[0];
-			pushData[3] = -1.0f - data->DisplayPos.y * pushData[1];
-			vkCmdPushConstants(*cmd, *layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(float) * 4, pushData);
+				float pushData[4];
+				pushData[0] = 2.0f / data->DisplaySize.x;
+				pushData[1] = 2.0f / data->DisplaySize.y;
+				pushData[2] = -1.0f - data->DisplayPos.x * pushData[0];
+				pushData[3] = -1.0f - data->DisplayPos.y * pushData[1];
+				vkCmdPushConstants(*cmd, *layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(float) * 4, pushData);
 
-			// Will project scissor/clipping rectangles into framebuffer space
-			ImVec2 clip_off = data->DisplayPos;         // (0,0) unless using multi-viewports
-			ImVec2 clip_scale = data->FramebufferScale; // (1,1) unless using retina display which are often (2,2)
+				// Will project scissor/clipping rectangles into framebuffer space
+				ImVec2 clip_off = data->DisplayPos;         // (0,0) unless using multi-viewports
+				ImVec2 clip_scale = data->FramebufferScale; // (1,1) unless using retina display which are often (2,2)
 
-			int vtx_offset = 0;
-			int idx_offset = 0;
-			for (int n = 0; n < data->CmdListsCount; n++)
-			{
-				const ImDrawList* cmd_list = data->CmdLists[n];
-				for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
+				int vtx_offset = 0;
+				int idx_offset = 0;
+				for (int n = 0; n < data->CmdListsCount; n++)
 				{
-					const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
-					if (pcmd->UserCallback)
+					const ImDrawList* cmd_list = data->CmdLists[n];
+					for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
 					{
-						pcmd->UserCallback(cmd_list, pcmd);
-					}
-					else
-					{
-						// Project scissor/clipping rectangles into framebuffer space
-						ImVec4 clip_rect;
-						clip_rect.x = (pcmd->ClipRect.x - clip_off.x) * clip_scale.x;
-						clip_rect.y = (pcmd->ClipRect.y - clip_off.y) * clip_scale.y;
-						clip_rect.z = (pcmd->ClipRect.z - clip_off.x) * clip_scale.x;
-						clip_rect.w = (pcmd->ClipRect.w - clip_off.y) * clip_scale.y;
-
-						if (clip_rect.x < width && clip_rect.y < height && clip_rect.z >= 0.0f && clip_rect.w >= 0.0f)
+						const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
+						if (pcmd->UserCallback)
 						{
-							cmd->setScissor(clip_rect.x, clip_rect.y, clip_rect.z - clip_rect.x, clip_rect.w - clip_rect.y);
-
-							cmd->drawIndex(pcmd->ElemCount, 1, idx_offset, vtx_offset, 0);
+							pcmd->UserCallback(cmd_list, pcmd);
 						}
+						else
+						{
+							// Project scissor/clipping rectangles into framebuffer space
+							ImVec4 clip_rect;
+							clip_rect.x = (pcmd->ClipRect.x - clip_off.x) * clip_scale.x;
+							clip_rect.y = (pcmd->ClipRect.y - clip_off.y) * clip_scale.y;
+							clip_rect.z = (pcmd->ClipRect.z - clip_off.x) * clip_scale.x;
+							clip_rect.w = (pcmd->ClipRect.w - clip_off.y) * clip_scale.y;
+
+							if (clip_rect.x < width && clip_rect.y < height && clip_rect.z >= 0.0f && clip_rect.w >= 0.0f)
+							{
+								cmd->setScissor(clip_rect.x, clip_rect.y, clip_rect.z - clip_rect.x, clip_rect.w - clip_rect.y);
+
+								cmd->drawIndex(pcmd->ElemCount, 1, idx_offset, vtx_offset, 0);
+							}
+						}
+						idx_offset += pcmd->ElemCount;
 					}
-					idx_offset += pcmd->ElemCount;
+					vtx_offset += cmd_list->VtxBuffer.Size;
 				}
-				vtx_offset += cmd_list->VtxBuffer.Size;
 			}
+
+			cmd->endRenderPass();
+			cmd->end();
+
+			return cmd;
 		}
 	};
 }

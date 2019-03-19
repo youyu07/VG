@@ -12,13 +12,11 @@ namespace vg
 		vk::Device* device = nullptr;
 		vk::Swapchain* swapchain = nullptr;
 		std::vector<DeviceHandle> geometries;
-
-		vk::RenderPass* renderPass = nullptr;
-		std::vector<vk::FrameBuffer*> frameBuffers;
-		std::vector<vk::CommandBuffer*> commandBuffers;
+		
+		vk::Fence* renderCompleteFence = nullptr;
 
 		ImguiRenderState* imguiState = nullptr;
-		vk::Fence* renderCompleteFence = nullptr;
+		GeometryRenderState* geometryState = nullptr;
 	
 		RenderImpl(HWND windowHandle)
 		{
@@ -27,48 +25,12 @@ namespace vg
 			const vk::SwapchainInfo swapchainInfo = { surface };
 			swapchain = device->createSwapchain(swapchainInfo);
 
-			VkAttachmentDescription colorDescription = {
-				0,
-				swapchain->getColorFormat(),
-				VK_SAMPLE_COUNT_1_BIT,
-				VK_ATTACHMENT_LOAD_OP_CLEAR,
-				VK_ATTACHMENT_STORE_OP_STORE,
-				VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-				VK_ATTACHMENT_STORE_OP_DONT_CARE,
-				VK_IMAGE_LAYOUT_UNDEFINED,
-				VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
-			};
-
-			VkAttachmentReference colorAttachment = { 0,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
-
-			VkSubpassDescription subpass = {
-				0,									//flag
-				VK_PIPELINE_BIND_POINT_GRAPHICS,	//pipelineBindPoint
-				0,									//inputAttachmentCount
-				nullptr,							//pInputAttachments
-				1,									//colorAttachmentCount
-				&colorAttachment,					//pColorAttachments
-				nullptr,							//pResolveAttachments
-				nullptr,							//pDepthStencilAttachment
-				0,									//preserveAttachmentCount
-				nullptr								//pPreserveAttachments
-			};
-
-			const vk::RenderPassInfo renderPassInfo = { {colorDescription},{subpass}, {} };
-			renderPass = device->createRenderPass(renderPassInfo);
-
-			//create frame buffer
-			for (auto& v : swapchain->getImageViews())
-			{
-				std::vector<VkImageView> attachment = { *v };
-				const vk::FrameBufferInfo frameBufferInfo = { swapchain->getWidth(),swapchain->getHeight(),*renderPass,attachment };
-				frameBuffers.push_back(device->createFrameBuffer(frameBufferInfo));
-
-				commandBuffers.push_back(device->createCommandBuffer());
-			}
-
-			imguiState = new ImguiRenderState(device, renderPass);
 			renderCompleteFence = device->createFence();
+
+
+			imguiState = new ImguiRenderState(device, swapchain);
+			geometryState = new GeometryRenderState(device);
+			geometryState->setup(swapchain->getExtent());
 		}
 
 		void draw()
@@ -76,26 +38,13 @@ namespace vg
 			renderCompleteFence->wait();
 			swapchain->acquireNextImage();
 			const auto index = swapchain->getFrameIndex();
-			const auto extent = swapchain->getExtent();
+			
+			auto& gs_cmd = geometryState->draw<GeometryBuffer>(geometries);
+			auto& gui_cmd = imguiState->draw(index);
+			
 
-			auto& cmd = commandBuffers[index];
-			cmd->begin();
-
-			const std::vector<VkClearValue> clearValue = {
-				{0.0f,0.0f,0.0f,1.0f}
-			};
-
-			const VkRect2D renderArea = { {},extent };
-			cmd->beginRenderPass(*renderPass, *frameBuffers[index], renderArea, clearValue);
-
-			cmd->setViewport(extent.width, extent.height);
-			cmd->setScissor(0, 0, extent.width, extent.height);
-
-			imguiState->draw(cmd);
-
-			cmd->endRenderPass();
-			cmd->end();
-			cmd->submit(swapchain->getAcquireSemaphore(), *imguiState->semaphore, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, *renderCompleteFence);
+			gs_cmd->submit(swapchain->getAcquireSemaphore(), *geometryState->semaphore, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+			gui_cmd->submit(*geometryState->semaphore, *imguiState->semaphore, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, *renderCompleteFence);
 			swapchain->present(*imguiState->semaphore);
 		}
 
