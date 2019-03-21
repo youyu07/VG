@@ -7,9 +7,6 @@ namespace vg
 	class ImguiRenderState : public RenderState
 	{
 	public:
-		vk::Swapchain* swapchain = nullptr;
-		vk::RenderPass* renderPass = nullptr;
-
 		vk::Sampler* sampler = nullptr;
 
 		vk::DescriptorSetLayout* setLayout = nullptr;
@@ -23,52 +20,9 @@ namespace vg
 		vk::Buffer* vertexBuffer = nullptr;
 		vk::Buffer* indexBuffer = nullptr;
 
-		std::vector<vk::FrameBuffer*> frameBuffers;
-		std::vector<vk::CommandBuffer*> commandBuffers;
-
-		ImguiRenderState(vk::Device* device, vk::Swapchain* swapchain) : RenderState(device), swapchain(swapchain)
+		ImguiRenderState(vk::Device* device, vk::RenderPass* renderPass) : RenderState(device)
 		{
-			VkAttachmentDescription colorDescription = {
-				0,
-				swapchain->getColorFormat(),
-				VK_SAMPLE_COUNT_1_BIT,
-				VK_ATTACHMENT_LOAD_OP_CLEAR,
-				VK_ATTACHMENT_STORE_OP_STORE,
-				VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-				VK_ATTACHMENT_STORE_OP_DONT_CARE,
-				VK_IMAGE_LAYOUT_UNDEFINED,
-				VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
-			};
-
-			VkAttachmentReference colorAttachment = { 0,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
-
-			VkSubpassDescription subpass = {
-				0,									//flag
-				VK_PIPELINE_BIND_POINT_GRAPHICS,	//pipelineBindPoint
-				0,									//inputAttachmentCount
-				nullptr,							//pInputAttachments
-				1,									//colorAttachmentCount
-				&colorAttachment,					//pColorAttachments
-				nullptr,							//pResolveAttachments
-				nullptr,							//pDepthStencilAttachment
-				0,									//preserveAttachmentCount
-				nullptr								//pPreserveAttachments
-			};
-
-			const vk::RenderPassInfo renderPassInfo = { {colorDescription},{subpass}, {} };
-			renderPass = device->createRenderPass(renderPassInfo);
-
-			setupPipeline();
-
-			//create frame buffer
-			for (auto& v : swapchain->getImageViews())
-			{
-				std::vector<VkImageView> attachment = { *v };
-				const vk::FrameBufferInfo frameBufferInfo = { swapchain->getWidth(),swapchain->getHeight(),*renderPass,attachment };
-				frameBuffers.push_back(device->createFrameBuffer(frameBufferInfo));
-
-				commandBuffers.push_back(device->createCommandBuffer());
-			}
+			setupPipeline(renderPass);
 
 			ImGuiIO& io = ImGui::GetIO();
 
@@ -92,7 +46,7 @@ namespace vg
 			io.Fonts->TexID = (ImTextureID)(intptr_t)tex;
 		}
 
-		void setupPipeline()
+		void setupPipeline(vk::RenderPass* renderPass)
 		{
 			const std::string vert =
 				"#version 450 core\n"
@@ -155,8 +109,9 @@ namespace vg
 				*renderPass,
 				*layout,
 				{{vert,VK_SHADER_STAGE_VERTEX_BIT,vk::ShaderType::GLSL},{frag,VK_SHADER_STAGE_FRAGMENT_BIT,vk::ShaderType::GLSL}},
-				b,
-				a
+				b, a,
+				VK_FALSE, VK_FALSE,
+				VK_TRUE
 			};
 
 			pipeline = device->createPipeline(info);
@@ -206,23 +161,8 @@ namespace vg
 			}
 		}
 
-		vk::CommandBuffer*& draw(uint32_t index)
+		void draw(vk::CommandBuffer* cmd)
 		{
-			auto& cmd = commandBuffers[index];
-			auto& frameBuffer = frameBuffers[index];
-			cmd->begin();
-
-			const std::vector<VkClearValue> clearValue = {
-				{0.0f,0.0f,0.0f,1.0f}
-			};
-
-			const auto extent = swapchain->getExtent();
-			const VkRect2D renderArea = { {},extent };
-			cmd->beginRenderPass(*renderPass, *frameBuffer, renderArea, clearValue);
-
-			cmd->setViewport(extent.width, extent.height);
-			cmd->setScissor(0, 0, extent.width, extent.height);
-
 			auto data = ImGui::GetDrawData();
 			int width = (int)(data->DisplaySize.x * data->FramebufferScale.x);
 			int height = (int)(data->DisplaySize.y * data->FramebufferScale.y);
@@ -281,11 +221,6 @@ namespace vg
 					vtx_offset += cmd_list->VtxBuffer.Size;
 				}
 			}
-
-			cmd->endRenderPass();
-			cmd->end();
-
-			return cmd;
 		}
 	};
 }

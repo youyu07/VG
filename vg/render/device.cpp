@@ -586,13 +586,17 @@ namespace vg::vk
 		multisampleState.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
 		VkPipelineDepthStencilStateCreateInfo depthStencilState = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
-		depthStencilState.depthTestEnable = VK_FALSE;
-		depthStencilState.depthWriteEnable = VK_FALSE;
+		depthStencilState.depthTestEnable = info.enableDepthTest;
+		depthStencilState.depthWriteEnable = info.enableDepthWrite;
 		depthStencilState.stencilTestEnable = VK_FALSE;
+		depthStencilState.minDepthBounds = 0.0f;
+		depthStencilState.maxDepthBounds = 1.0f;
+		depthStencilState.depthBoundsTestEnable = VK_FALSE;
+		depthStencilState.depthCompareOp = VK_COMPARE_OP_ALWAYS;
 
 		VkPipelineColorBlendStateCreateInfo colorBlendState = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
 		VkPipelineColorBlendAttachmentState colorBlendAttachment = {
-			VK_TRUE,
+			info.enableColorBlend,
 			VK_BLEND_FACTOR_SRC_ALPHA,VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,VK_BLEND_OP_ADD,
 			VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,VK_BLEND_FACTOR_ZERO,VK_BLEND_OP_ADD,
 			0xf

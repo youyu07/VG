@@ -87,6 +87,9 @@ namespace vg::vk
 		std::vector<ShaderInfo> shaders;
 		std::vector<VkVertexInputBindingDescription> vertexBindings;
 		std::vector<VkVertexInputAttributeDescription> vertexAttributes;
+		VkBool32 enableDepthTest = VK_FALSE;
+		VkBool32 enableDepthWrite = VK_FALSE;
+		VkBool32 enableColorBlend = VK_FALSE;
 		VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	};
 
