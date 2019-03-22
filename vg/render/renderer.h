@@ -6,6 +6,7 @@
 #include <vector>
 #include <unordered_map>
 #include "geometryInfo.h"
+#include <core/camera.h>
 
 namespace vg
 {
@@ -19,6 +20,8 @@ namespace vg
 		void draw();
 
 		DeviceHandle createGeometry(const GeometryBufferInfo& geometry);
+
+		void bindCamera(const Camera& camera);
 	private:
 		class RenderImpl* impl = nullptr;
 	};
