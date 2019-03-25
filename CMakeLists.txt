@@ -8,10 +8,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(Vulkan_DIR "$ENV{VULKAN_SDK}")
 include_directories(${Vulkan_DIR}/Third-Party/Include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/entt)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-set(Shaderc_DIR ${CMAKE_CURRENT_SOURCE_DIR}/shaderc)
+set(Shaderc_DIR ${CMAKE_CURRENT_SOURCE_DIR}/deps/shaderc)
 
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS TRUE)
 
