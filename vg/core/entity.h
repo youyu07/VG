@@ -11,4 +11,9 @@ namespace vg
 
 	};
 	
+
+	class TransformComponent : public IComponent
+	{
+
+	};
 }

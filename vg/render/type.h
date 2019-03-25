@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <string>
 #include "format.h"
 
 namespace vg
@@ -7,10 +8,12 @@ namespace vg
     enum
     {
         MAX_ATTRIBUTE = 16,
+        MAX_PUSH_CONSTANT_RANGE = 4
     };
 
     struct Shader;
     struct Buffer;
+    struct PipelineLayout;
 
     enum class MemoryUsage
     {
@@ -41,7 +44,22 @@ namespace vg
         SHADER_TESE = 0x00000004,
         SHADER_GEOM = 0x00000008,
         SHADER_FRAG = 0x00000010,
-        SHADER_COMP = 0x00000020
+        SHADER_COMP = 0x00000020,
+    };
+
+    enum class ShaderType
+    {
+        SPV,
+		GLSL,
+		SPV_FILE,
+		GLSL_FILE
+    };
+
+    struct ShaderDesc
+    {
+        ShaderStage stage;
+        std::string source;
+		ShaderType type = ShaderType::SPV_FILE;
     };
 
     struct VertexLayout
@@ -55,11 +73,23 @@ namespace vg
         }attributes[MAX_ATTRIBUTE];
     };
 
+    enum class PrimitiveType
+    {
+        Point_List,
+        Line_List,
+        Line_Strip,
+        Triangles_List,
+        Triangles_Strip,
+        Triangles_Fan
+    };
+
     struct GraphicsPipelineDesc
     {
         ShaderStage stage;
-        Shader* shaders;
+        Shader* shaders[5] = {};
         VertexLayout vertexLayout;
+        PipelineLayout* layout;
+        PrimitiveType primitiveType = PrimitiveType::Triangles_List;
     };
 
     struct PipelineDesc
@@ -73,6 +103,18 @@ namespace vg
         {
             GraphicsPipelineDesc graphics;
         };
+    };
+
+    struct PipelineLayoutDesc
+    {
+        uint32_t setLayoutCount = 0;
+        DescriptorSetLayout* layouts;
+        struct PushConstant
+        {
+            ShaderStage stage;
+            uint32_t offset = 0;
+            uint32_t size = 0;
+        }pushConstant[MAX_PUSH_CONSTANT_RANGE];
     };
     
     struct BufferDesc
