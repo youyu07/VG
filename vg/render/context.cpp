@@ -83,6 +83,8 @@ namespace vg
 			return;
 		}
 
+		auto formats = physicalDevice.getSurfaceFormatsKHR(surface.get());
+
 		auto capabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface.get());
 		vk::SwapchainCreateInfoKHR info;
 		info.imageExtent = capabilities.currentExtent;
@@ -109,6 +111,7 @@ namespace vg
 		}
 
 		swapchainFormat = info.imageFormat;
+		extent = info.imageExtent;
 	}
 
 
@@ -144,18 +147,7 @@ namespace vg
 		return std::move(code);
 	}
 
-	static VkShaderModule createModule(VkDevice device, const uint32_t* code, size_t size)
-	{
-		VkShaderModuleCreateInfo createInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
-		createInfo.codeSize = size;
-		createInfo.pCode = code;
-
-		VkShaderModule handle = VK_NULL_HANDLE;
-		vkCreateShaderModule(device, &createInfo, nullptr, &handle);
-		return handle;
-	}
-
-	std::vector<uint8_t> Context::compileGLSLToSpv(vk::ShaderStageFlagBits stage,const std::string& src) const
+	std::vector<uint32_t> Context::compileGLSLToSpv(vk::ShaderStageFlagBits stage,const std::string& src) const
 	{
 		shaderc_compiler_t compiler = shaderc_compiler_initialize();
 		auto result = shaderc_compile_into_spv(
@@ -168,9 +160,9 @@ namespace vg
 		}
 
 		auto length = shaderc_result_get_length(result);
-		auto bytes = shaderc_result_get_bytes(result);
+		auto bytes = (uint32_t*)shaderc_result_get_bytes(result);
 
-		std::vector<uint8_t> data(bytes, bytes + length);
+		std::vector<uint32_t> data(bytes, bytes + length/4);
 
 		// Do stuff with compilation results.
 		shaderc_result_release(result);

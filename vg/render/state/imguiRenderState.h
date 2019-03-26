@@ -15,36 +15,51 @@ namespace vg
 		vk::UniquePipeline pipeline;
 
 		vku::TextureImage2D tex;
-		vk::ImageView* texView = nullptr;
-		vk::DescriptorSet* descriptorSet = nullptr;
+		vk::UniqueDescriptorSet descriptorSet;
 
-		vk::Buffer* vertexBuffer = nullptr;
-		vk::Buffer* indexBuffer = nullptr;
+		vku::GenericBuffer vertexBuffer;
+		vku::GenericBuffer indexBuffer;
+
+		ImguiRenderState() {}
 
 		ImguiRenderState(const Context& ctx, vk::RenderPass renderPass)
 		{
 			setupPipeline(ctx,renderPass);
 
-			ImGuiIO& io = ImGui::GetIO();
+			{
+				vku::SamplerMaker sm{};
+				sampler = sm.createUnique(ctx.getDevice());
+			}
 
-			unsigned char* pixels;
-			int width, height;
-			io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
-			size_t upload_size = width * height * 4 * sizeof(char);
+			{
+				ImGuiIO& io = ImGui::GetIO();
 
-			tex = vku::TextureImage2D{ ctx.getDevice(),ctx.getMemoryProperties(),static_cast<uint32_t>(width),static_cast<uint32_t>(height) };
-			tex.upload(ctx.getDevice(), std::vector<uint8_t>(pixels, pixels + upload_size), ctx.getCommandPool(), ctx.getMemoryProperties(), ctx.getGraphicsQueue());
+				unsigned char* pixels;
+				int width, height;
+				io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+				size_t upload_size = width * height * 4 * sizeof(char);
 
+				tex = vku::TextureImage2D{ ctx.getDevice(),ctx.getMemoryProperties(),static_cast<uint32_t>(width),static_cast<uint32_t>(height) };
+				tex.upload(ctx.getDevice(), std::vector<uint8_t>(pixels, pixels + upload_size), ctx.getCommandPool(), ctx.getMemoryProperties(), ctx.getGraphicsQueue());
+
+				// Store our identifier
+				io.Fonts->TexID = (ImTextureID)(intptr_t)&tex;
+			}
 			
+			{
+				vku::DescriptorSetMaker dsm;
+				dsm.layout(setLayout.get());
+				descriptorSet = std::move(dsm.createUnique(ctx.getDevice(), ctx.getDescriptorPool()).at(0));
 
-			descriptorSet = device->createDescriptorSet(setLayout->getPtr());
+				vku::DescriptorSetUpdater update;
+				update.beginDescriptorSet(descriptorSet.get());
 
-			VkDescriptorImageInfo descriptorImageInfo = { *sampler,*texView,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
-			const vk::DescriptorSet::WriteInfo writeInfo = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,&descriptorImageInfo,nullptr };
-			descriptorSet->update({ writeInfo });
+				// Set initial sampler value
+				update.beginImages(0, 0, vk::DescriptorType::eCombinedImageSampler);
+				update.image(sampler.get(), tex.imageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
 
-			// Store our identifier
-			io.Fonts->TexID = (ImTextureID)(intptr_t)tex;
+				update.update(ctx.getDevice());
+			}
 		}
 
 		void setupPipeline(const Context& ctx, vk::RenderPass renderPass)
@@ -92,19 +107,7 @@ namespace vg
 				"	fColor = In.Color * texture(sTexture, In.UV.st);\n"
 				"}\n";
 
-			std::vector<VkVertexInputBindingDescription> b = {
-				{ 0,4 * 5,VK_VERTEX_INPUT_RATE_VERTEX }
-			};
-			std::vector<VkVertexInputAttributeDescription> a = {
-				{ 0,0,VK_FORMAT_R32G32_SFLOAT,0 },
-				{ 1,0,VK_FORMAT_R32G32_SFLOAT,8 },
-				{ 2,0,VK_FORMAT_R8G8B8A8_UNORM,16 }
-			};
-
-			{
-				vku::SamplerMaker sm{};
-				vk::UniqueSampler sampler = sm.createUnique(ctx.getDevice());
-			}
+			
 			{
 				vku::DescriptorSetLayoutMaker dsm;
 				dsm.image(0, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment, 1);
@@ -118,48 +121,40 @@ namespace vg
 			}
 			{
 				auto vertData = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eVertex, vert);
-				auto fragData = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eVertex, frag);
+				auto fragData = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eFragment, frag);
 				auto vertShader = vku::ShaderModule(ctx.getDevice(), vertData.begin(), vertData.end());
 				auto fragShader = vku::ShaderModule(ctx.getDevice(), fragData.begin(), fragData.end());
-
-				//auto vert = vku::ShaderModule(ctx.getDevice(),)
-				//vku::ShaderModule vert_{ ctx.getDevice(), BINARY_DIR "texture.vert.spv" };
-				//vku::ShaderModule frag_{ ctx.getDevice(), BINARY_DIR "texture.frag.spv" };
 
 				vku::PipelineMaker pm{ ctx.getExtent().width, ctx.getExtent().height };
 				pm.shader(vk::ShaderStageFlagBits::eVertex, vertShader);
 				pm.shader(vk::ShaderStageFlagBits::eFragment, fragShader);
-			}
-			const vk::PipelineInfo info = {
-				*renderPass,
-				*layout,
-				{{vert,VK_SHADER_STAGE_VERTEX_BIT,vk::ShaderType::GLSL},{frag,VK_SHADER_STAGE_FRAGMENT_BIT,vk::ShaderType::GLSL}},
-				b, a,
-				VK_FALSE, VK_FALSE,
-				VK_TRUE
-			};
+				pm.vertexBinding(0,sizeof(float)*5);
+				pm.vertexAttribute(0, 0, vk::Format::eR32G32Sfloat,0);
+				pm.vertexAttribute(1, 0, vk::Format::eR32G32Sfloat, sizeof(float) * 2);
+				pm.vertexAttribute(2, 0, vk::Format::eR8G8B8A8Unorm, sizeof(float) * 4);
+				pm.dynamicState(vk::DynamicState::eScissor);
+				pm.blendBegin(VK_TRUE);
 
-			pipeline = device->createPipeline(info);
+				pipeline = pm.createUnique(ctx.getDevice(), vk::PipelineCache(), layout.get(), renderPass);
+			}
 		}
 
-		void createOrResizeBuffer(ImDrawData* data)
+		void createOrResizeBuffer(const Context& ctx,ImDrawData* data)
 		{
 			// Create the Vertex and Index buffers:
 			uint32_t vertex_size = data->TotalVtxCount * sizeof(ImDrawVert);
 			uint32_t index_size = data->TotalIdxCount * sizeof(ImDrawIdx);
-			if (!vertexBuffer || vertexBuffer->getInfo().size < vertex_size)
+			if (vertexBuffer.size() < vertex_size)
 			{
-				if(vertexBuffer)delete vertexBuffer;
-
-				const vk::BufferInfo info = { vertex_size,VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,vk::MemoryUsage::CPU_GPU };
-				vertexBuffer = device->createBuffer(info);
+				vertexBuffer = vku::GenericBuffer(ctx, ctx.getMemoryProperties(),
+					vk::BufferUsageFlagBits::eVertexBuffer,vertex_size,
+					vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 			}
-			if (!indexBuffer || indexBuffer->getInfo().size < index_size)
+			if (indexBuffer.size() < index_size)
 			{
-				if (indexBuffer)delete indexBuffer;
-
-				const vk::BufferInfo info = { index_size,VK_BUFFER_USAGE_INDEX_BUFFER_BIT,vk::MemoryUsage::CPU_GPU };
-				indexBuffer = device->createBuffer(info);
+				indexBuffer = vku::GenericBuffer(ctx, ctx.getMemoryProperties(),
+					vk::BufferUsageFlagBits::eIndexBuffer, index_size,
+					vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 			}
 
 			// Upload Vertex and index Data:
@@ -167,47 +162,48 @@ namespace vg
 				uint32_t vertexOffset = 0;
 				uint32_t indexOffset = 0;
 				
-				std::vector<char> vertexData(vertex_size);
-				std::vector<char> indexData(index_size);
+				auto vp = (char*)vertexBuffer.map(ctx);
+				auto ip = (char*)indexBuffer.map(ctx);
 				for (int n = 0; n < data->CmdListsCount; n++)
 				{
 					const ImDrawList* cmd_list = data->CmdLists[n];
 					uint32_t vs = cmd_list->VtxBuffer.Size * sizeof(ImDrawVert);
 					uint32_t is = cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx);
 
-					memcpy(vertexData.data() + vertexOffset, cmd_list->VtxBuffer.Data, vs);
-					memcpy(indexData.data() + indexOffset, cmd_list->IdxBuffer.Data, is);
+					memcpy(vp + vertexOffset, cmd_list->VtxBuffer.Data, vs);
+					memcpy(ip + indexOffset, cmd_list->IdxBuffer.Data, is);
 
 					vertexOffset += vs;
 					indexOffset += is;
 				}
-				vertexBuffer->update(vertex_size, vertexData.data());
-				indexBuffer->update(index_size, indexData.data());
+				vertexBuffer.unmap(ctx);
+				indexBuffer.unmap(ctx);
+				vertexBuffer.flush(ctx);
+				indexBuffer.flush(ctx);
 			}
 		}
 
-		void draw(vk::CommandBuffer* cmd)
+		void draw(const Context& ctx, vk::CommandBuffer cmd)
 		{
 			auto data = ImGui::GetDrawData();
 			int width = (int)(data->DisplaySize.x * data->FramebufferScale.x);
 			int height = (int)(data->DisplaySize.y * data->FramebufferScale.y);
 
 			if (width >0 && height > 0 && data->TotalVtxCount > 0) {
-				createOrResizeBuffer(data);
-				cmd->bindPipeline(*pipeline);
+				createOrResizeBuffer(ctx,data);
+				cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,pipeline.get());
 
 				std::vector<VkDeviceSize> offsets = { 0 };
-				cmd->bindVertex({ *vertexBuffer }, offsets);
-				cmd->bindIndex(*indexBuffer, VK_INDEX_TYPE_UINT16);
+				cmd.bindVertexBuffers(0, vertexBuffer.buffer(), offsets);
+				cmd.bindIndexBuffer(indexBuffer.buffer(), 0, vk::IndexType::eUint16);
+				cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout.get(), 0, descriptorSet.get(), {});
 
-				cmd->bindDescriptorSet(*layout, { *descriptorSet }, {});
-
-				float pushData[4];
+				std::vector<float> pushData(4);
 				pushData[0] = 2.0f / data->DisplaySize.x;
 				pushData[1] = 2.0f / data->DisplaySize.y;
 				pushData[2] = -1.0f - data->DisplayPos.x * pushData[0];
 				pushData[3] = -1.0f - data->DisplayPos.y * pushData[1];
-				vkCmdPushConstants(*cmd, *layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(float) * 4, pushData);
+				cmd.pushConstants(layout.get(), vk::ShaderStageFlagBits::eVertex, 0U, static_cast<uint32_t>(sizeof(float)*4),pushData.data());
 
 				// Will project scissor/clipping rectangles into framebuffer space
 				ImVec2 clip_off = data->DisplayPos;         // (0,0) unless using multi-viewports
@@ -236,9 +232,10 @@ namespace vg
 
 							if (clip_rect.x < width && clip_rect.y < height && clip_rect.z >= 0.0f && clip_rect.w >= 0.0f)
 							{
-								cmd->setScissor(clip_rect.x, clip_rect.y, clip_rect.z - clip_rect.x, clip_rect.w - clip_rect.y);
-
-								cmd->drawIndex(pcmd->ElemCount, 1, idx_offset, vtx_offset, 0);
+								auto scissor = vk::Rect2D{ {static_cast<int32_t>(clip_rect.x), static_cast<int32_t>(clip_rect.y)}, 
+									{static_cast<uint32_t>(clip_rect.z - clip_rect.x), static_cast<uint32_t>(clip_rect.w - clip_rect.y)} };
+								cmd.setScissor(0, scissor);
+								cmd.drawIndexed(pcmd->ElemCount, 1, idx_offset, vtx_offset, 0);
 							}
 						}
 						idx_offset += pcmd->ElemCount;

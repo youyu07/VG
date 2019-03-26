@@ -1137,7 +1137,7 @@ public:
 private:
   vk::UniqueBuffer buffer_;
   vk::UniqueDeviceMemory mem_;
-  vk::DeviceSize size_;
+  vk::DeviceSize size_ = 0;
 };
 
 /// This class is a specialisation of GenericBuffer for high performance vertex buffers on the GPU.
@@ -1492,8 +1492,8 @@ public:
     imageMemoryBarriers.subresourceRange = {aspectMask, 0, s.info.mipLevels, 0, s.info.arrayLayers};
 
     // Put barrier on top
-    vk::PipelineStageFlags srcStageMask{vk::PipelineStageFlagBits::eTopOfPipe};
-    vk::PipelineStageFlags dstStageMask{vk::PipelineStageFlagBits::eTopOfPipe};
+    vk::PipelineStageFlags srcStageMask{vk::PipelineStageFlagBits::eAllCommands };
+    vk::PipelineStageFlags dstStageMask{vk::PipelineStageFlagBits::eAllCommands };
     vk::DependencyFlags dependencyFlags{};
     vk::AccessFlags srcMask{};
     vk::AccessFlags dstMask{};

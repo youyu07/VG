@@ -12,9 +12,11 @@ namespace vg
 {
 	class RendererImpl
 	{
-		Context context;
+		Context ctx;
 
 		vk::UniqueRenderPass renderPass;
+
+		vku::DepthStencilImage depth;
 
 		std::vector<vk::UniqueFramebuffer> frameBuffers;
 		std::vector<vk::UniqueCommandBuffer> drawCommandBuffers;
@@ -22,38 +24,55 @@ namespace vg
 		vk::UniqueSemaphore acquireSemaphore;
 		vk::UniqueSemaphore drawCompleteSemaphore;
 		vk::UniqueFence drawFence;
+
+		ImguiRenderState imguiState;
 	public:
 		RendererImpl(const void* windowHandle) {
-			context = Context{ windowHandle };
+			ctx = Context{ windowHandle };
 
 			{
 				vku::RenderpassMaker rm;
-				rm.attachmentBegin(context.getSwapchainFormat());
+				rm.attachmentBegin(ctx.getSwapchainFormat());
 				rm.attachmentLoadOp(vk::AttachmentLoadOp::eClear);
 				rm.attachmentStoreOp(vk::AttachmentStoreOp::eStore);
 				rm.attachmentFinalLayout(vk::ImageLayout::ePresentSrcKHR);
 
+				rm.attachmentBegin(vk::Format::eD24UnormS8Uint);
+				rm.attachmentLoadOp(vk::AttachmentLoadOp::eClear);
+				rm.attachmentStoreOp(vk::AttachmentStoreOp::eStore);
+				rm.attachmentFinalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
+
 				rm.subpassBegin(vk::PipelineBindPoint::eGraphics);
 				rm.subpassColorAttachment(vk::ImageLayout::eColorAttachmentOptimal, 0);
-				renderPass = rm.createUnique(context.getDevice());
+				rm.subpassDepthStencilAttachment(vk::ImageLayout::eDepthStencilAttachmentOptimal, 1);
+				renderPass = rm.createUnique(ctx.getDevice());
 			}
 
 			{
-				for (uint32_t i = 0; i < context.getSwapchainImageCount(); i++)
+				depth = vku::DepthStencilImage(ctx, ctx.getMemoryProperties(), ctx.getExtent().width, ctx.getExtent().height);
+
+				for (uint32_t i = 0; i < ctx.getSwapchainImageCount(); i++)
 				{
-					auto frameInfo = vk::FramebufferCreateInfo({}, renderPass.get(), 1, &context.getSwapchainImageView(i), context.getExtent().width, context.getExtent().height, 1);
-					frameBuffers.emplace_back(context.getDevice().createFramebufferUnique(frameInfo));
+					vk::ImageView attachment[2] = { ctx.getSwapchainImageView(i),depth.imageView() };
+					auto frameInfo = vk::FramebufferCreateInfo({}, renderPass.get(), 2, attachment, ctx.getExtent().width, ctx.getExtent().height, 1);
+					frameBuffers.emplace_back(ctx.getDevice().createFramebufferUnique(frameInfo));
 				}
 			}
 
-			drawCommandBuffers = context.getDevice().allocateCommandBuffersUnique({context.getCommandPool(),vk::CommandBufferLevel::ePrimary,static_cast<uint32_t>(frameBuffers.size()) });
+			drawCommandBuffers = ctx.getDevice().allocateCommandBuffersUnique({ ctx.getCommandPool(),vk::CommandBufferLevel::ePrimary,static_cast<uint32_t>(frameBuffers.size()) });
+
+			imguiState = ImguiRenderState(ctx, renderPass.get());
+
+			acquireSemaphore = ctx.getDevice().createSemaphoreUnique({});
+			drawCompleteSemaphore = ctx.getDevice().createSemaphoreUnique({});
+			drawFence = ctx.getDevice().createFenceUnique({vk::FenceCreateFlagBits::eSignaled});
 		}
 
 		void buildCommandBuffer(uint32_t index)
 		{
-			auto& cmd = drawCommandBuffers.at(index);
+			auto& cmd = drawCommandBuffers.at(index).get();
 
-			cmd->begin({});
+			cmd.begin(vk::CommandBufferBeginInfo());
 
 			std::array<float, 4> clearColorValue{ 0.75f, 0.75f, 0.75f, 1 };
 			vk::ClearDepthStencilValue clearDepthValue{ 1.0f, 0 };
@@ -61,21 +80,23 @@ namespace vg
 			vk::RenderPassBeginInfo beginInfo;
 			beginInfo.renderPass = renderPass.get();
 			beginInfo.framebuffer = frameBuffers.at(index).get();
-			beginInfo.renderArea = vk::Rect2D{ {0, 0}, context.getExtent() };
+			beginInfo.renderArea = vk::Rect2D{ {0, 0}, ctx.getExtent() };
 			beginInfo.clearValueCount = (uint32_t)clearColours.size();
 			beginInfo.pClearValues = clearColours.data();
-			cmd->beginRenderPass(beginInfo,vk::SubpassContents::eInline);
+			cmd.beginRenderPass(beginInfo,vk::SubpassContents::eInline);
 
-			cmd->endRenderPass();
-			cmd->end();
+			imguiState.draw(ctx, cmd);
+
+			cmd.endRenderPass();
+			cmd.end();
 		}
 
 		void draw()
 		{
-			const auto& device = context.getDevice();
+			const auto& device = ctx.getDevice();
 
 			uint32_t imageIndex = 0;
-			auto result = device.acquireNextImageKHR(context.getSwapchain(), std::numeric_limits<uint64_t>::max(), acquireSemaphore.get(), vk::Fence());
+			auto result = device.acquireNextImageKHR(ctx.getSwapchain(), std::numeric_limits<uint64_t>::max(), acquireSemaphore.get(), vk::Fence());
 			imageIndex = result.value;
 
 			device.waitForFences(drawFence.get(),VK_TRUE, std::numeric_limits<uint64_t>::max());
@@ -93,15 +114,15 @@ namespace vg
 			submit.pCommandBuffers = &drawCommandBuffers.at(imageIndex).get();
 			submit.signalSemaphoreCount = 1;
 			submit.pSignalSemaphores = &drawCompleteSemaphore.get();
-			context.getGraphicsQueue().submit(1, &submit, drawFence.get());
+			ctx.getGraphicsQueue().submit(1, &submit, drawFence.get());
 
 			vk::PresentInfoKHR presentInfo;
-			presentInfo.pSwapchains = &context.getSwapchain();
+			presentInfo.pSwapchains = &ctx.getSwapchain();
 			presentInfo.swapchainCount = 1;
 			presentInfo.pImageIndices = &imageIndex;
 			presentInfo.waitSemaphoreCount = 1;
 			presentInfo.pWaitSemaphores = &drawCompleteSemaphore.get();
-			context.getGraphicsQueue().presentKHR(presentInfo);
+			ctx.getGraphicsQueue().presentKHR(presentInfo);
 		}
 	};
 

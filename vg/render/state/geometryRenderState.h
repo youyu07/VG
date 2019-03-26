@@ -1,22 +1,24 @@
 #pragma once
 
+#include "../context.h"
+
 namespace vg
 {
 
-	class GeometryRenderState : public RenderState
+	class GeometryRenderState
 	{
 	public:
-		vk::PipelineLayout* layout = nullptr;
-		vk::Pipeline* pipeline = nullptr;
+		vk::UniquePipelineLayout layout;
+		vk::UniquePipeline pipeline;
 
-		GeometryRenderState(vk::Device* device,vk::RenderPass* renderPass) : RenderState(device)
+		GeometryRenderState(const Context& ctx,vk::RenderPass renderPass)
 		{
-			setupPipeline(renderPass);
+			setupPipeline(ctx,renderPass);
 		}
 
-		void setupPipeline(vk::RenderPass* renderPass)
+		void setupPipeline(const Context& ctx,vk::RenderPass renderPass)
 		{
-			layout = device->createPipelineLayout({});
+			//layout = device->createPipelineLayout({});
 
 			const std::string vert =
 				"#version 450\n"
@@ -47,6 +49,7 @@ namespace vg
 				{ 1,1,VK_FORMAT_R32G32B32_SFLOAT,4*3 }
 			};
 
+			/*
 			const vk::PipelineInfo info = {
 				*renderPass,
 				*layout,
@@ -57,8 +60,10 @@ namespace vg
 			};
 
 			pipeline = device->createPipeline(info);
+			*/
 		}
 
+		/*
 		template<typename Type> void draw(vk::CommandBuffer* cmd,const std::vector<DeviceHandle>& gs)
 		{
 			cmd->bindPipeline(*pipeline);
@@ -69,6 +74,7 @@ namespace vg
 				geometry->draw(cmd);
 			}
 		}
+		*/
 	};
 
 }

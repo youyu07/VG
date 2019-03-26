@@ -34,18 +34,24 @@ namespace vg
 
 		void createSwapchain();
 
-		std::vector<uint8_t> compileGLSLToSpv(vk::ShaderStageFlagBits stage,const std::string& src) const;
+		std::vector<uint32_t> compileGLSLToSpv(vk::ShaderStageFlagBits stage,const std::string& src) const;
 
 		inline const vk::Queue& getGraphicsQueue() const { return graphicsQueue; }
 		inline const vk::Queue& getComputerQueue() const { return computerQueue; }
 		inline const vk::Device& getDevice() const { return device.get(); }
 		inline const vk::SwapchainKHR& getSwapchain() const { return swapchain.get(); }
 		inline const vk::CommandPool& getCommandPool() const { return commandPool.get(); }
+		inline const vk::DescriptorPool& getDescriptorPool() const { return descriptorPool.get(); }
 		inline const vk::PhysicalDeviceMemoryProperties& getMemoryProperties() const { return memoryProperties; }
 		inline const vk::Extent2D& getExtent() const { return extent; }
 		inline const vk::Format& getSwapchainFormat() const { return swapchainFormat; }
-		inline const uint32_t& getSwapchainImageCount() const { return static_cast<uint32_t>(swapchainImages.size()); }
+		inline uint32_t getSwapchainImageCount() const { return static_cast<uint32_t>(swapchainImages.size()); }
 		inline const vk::ImageView& getSwapchainImageView(uint32_t index) const { return swapchainImageViews.at(index).get(); }
+
+		operator vk::Device() const
+		{
+			return device.get();
+		}
 	};
 
 }
