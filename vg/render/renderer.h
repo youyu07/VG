@@ -1,10 +1,5 @@
 #pragma once
-#if defined(WIN32)
-#include <Windows.h>
-#endif
 
-#include <vector>
-#include <unordered_map>
 #include "geometryInfo.h"
 #include <core/camera.h>
 
@@ -15,7 +10,7 @@ namespace vg
 	class Renderer
 	{
 	public:
-		void setup(HWND windowHandle);
+		void setup(const void* windowHandle);
 
 		void draw();
 
@@ -23,7 +18,7 @@ namespace vg
 
 		void bindCamera(const Camera& camera);
 	private:
-		class RenderImpl* impl = nullptr;
+		class RendererImpl* impl = nullptr;
 	};
 
 }

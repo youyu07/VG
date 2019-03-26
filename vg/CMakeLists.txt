@@ -7,14 +7,18 @@ set(VG_SOURCE
 	imgui/imgui_draw.cpp
 	imgui/imgui_widgets.cpp
 	imgui/imgui_win32.cpp
-    render/device.cpp
+	render/context.cpp
 	render/renderer.cpp
-	render/shader.cpp
 	util/entry.cpp
 	util/entry_win.cpp
 	util/geometry.cpp)
 
 add_library(vg SHARED ${VG_SOURCE})
+
+add_definitions(-DNOMINMAX)
+add_definitions(-DWIN32_LEAN_AND_MEAN)
+add_definitions(-DVK_USE_PLATFORM_WIN32_KHR)
+add_definitions(-DVKU_SURFACE="VK_KHR_win32_surface")
 
 target_include_directories(vg PRIVATE Vulkan::Vulkan ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(vg PRIVATE Vulkan::Vulkan ${Shaderc_DIR}/lib/shaderc_shared.lib)

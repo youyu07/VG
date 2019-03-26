@@ -1,28 +1,29 @@
 #pragma once
 
-#include "imgui/imgui.h"
+#include "../context.h"
+#include <imgui/imgui.h>
 
 namespace vg
 {
-	class ImguiRenderState : public RenderState
+	class ImguiRenderState
 	{
 	public:
-		vk::Sampler* sampler = nullptr;
+		vk::UniqueSampler sampler;
 
-		vk::DescriptorSetLayout* setLayout = nullptr;
-		vk::PipelineLayout* layout = nullptr;
-		vk::Pipeline* pipeline = nullptr;
+		vk::UniqueDescriptorSetLayout setLayout;
+		vk::UniquePipelineLayout layout;
+		vk::UniquePipeline pipeline;
 
-		vk::Image* tex = nullptr;
+		vku::TextureImage2D tex;
 		vk::ImageView* texView = nullptr;
 		vk::DescriptorSet* descriptorSet = nullptr;
 
 		vk::Buffer* vertexBuffer = nullptr;
 		vk::Buffer* indexBuffer = nullptr;
 
-		ImguiRenderState(vk::Device* device, vk::RenderPass* renderPass) : RenderState(device)
+		ImguiRenderState(const Context& ctx, vk::RenderPass renderPass)
 		{
-			setupPipeline(renderPass);
+			setupPipeline(ctx,renderPass);
 
 			ImGuiIO& io = ImGui::GetIO();
 
@@ -31,10 +32,10 @@ namespace vg
 			io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
 			size_t upload_size = width * height * 4 * sizeof(char);
 
-			vk::ImageInfo imageInfo = { static_cast<uint32_t>(width),static_cast<uint32_t>(height),VK_FORMAT_R8G8B8A8_UNORM,1,1,VK_IMAGE_TYPE_2D,VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT };
-			tex = device->createImage(imageInfo);
-			texView = tex->createView();
-			tex->update(pixels);
+			tex = vku::TextureImage2D{ ctx.getDevice(),ctx.getMemoryProperties(),static_cast<uint32_t>(width),static_cast<uint32_t>(height) };
+			tex.upload(ctx.getDevice(), std::vector<uint8_t>(pixels, pixels + upload_size), ctx.getCommandPool(), ctx.getMemoryProperties(), ctx.getGraphicsQueue());
+
+			
 
 			descriptorSet = device->createDescriptorSet(setLayout->getPtr());
 
@@ -46,7 +47,7 @@ namespace vg
 			io.Fonts->TexID = (ImTextureID)(intptr_t)tex;
 		}
 
-		void setupPipeline(vk::RenderPass* renderPass)
+		void setupPipeline(const Context& ctx, vk::RenderPass renderPass)
 		{
 			const std::string vert =
 				"#version 450 core\n"
@@ -100,11 +101,35 @@ namespace vg
 				{ 2,0,VK_FORMAT_R8G8B8A8_UNORM,16 }
 			};
 
-			sampler = device->createSampler({});
-			std::vector<VkDescriptorSetLayoutBinding> bindings = { {0,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1,VK_SHADER_STAGE_FRAGMENT_BIT,nullptr} };
-			setLayout = device->createDescriptorSetLayout(bindings);
-			VkPushConstantRange pushConstant = { VK_SHADER_STAGE_VERTEX_BIT,0,16 };
-			layout = device->createPipelineLayout({ {*setLayout},{pushConstant} });
+			{
+				vku::SamplerMaker sm{};
+				vk::UniqueSampler sampler = sm.createUnique(ctx.getDevice());
+			}
+			{
+				vku::DescriptorSetLayoutMaker dsm;
+				dsm.image(0, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment, 1);
+				setLayout = dsm.createUnique(ctx.getDevice());
+			}
+			{
+				vku::PipelineLayoutMaker plm{};
+				plm.descriptorSetLayout(setLayout.get());
+				plm.pushConstantRange(vk::ShaderStageFlagBits::eVertex, 0, 16);
+				layout = plm.createUnique(ctx.getDevice());
+			}
+			{
+				auto vertData = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eVertex, vert);
+				auto fragData = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eVertex, frag);
+				auto vertShader = vku::ShaderModule(ctx.getDevice(), vertData.begin(), vertData.end());
+				auto fragShader = vku::ShaderModule(ctx.getDevice(), fragData.begin(), fragData.end());
+
+				//auto vert = vku::ShaderModule(ctx.getDevice(),)
+				//vku::ShaderModule vert_{ ctx.getDevice(), BINARY_DIR "texture.vert.spv" };
+				//vku::ShaderModule frag_{ ctx.getDevice(), BINARY_DIR "texture.frag.spv" };
+
+				vku::PipelineMaker pm{ ctx.getExtent().width, ctx.getExtent().height };
+				pm.shader(vk::ShaderStageFlagBits::eVertex, vertShader);
+				pm.shader(vk::ShaderStageFlagBits::eFragment, fragShader);
+			}
 			const vk::PipelineInfo info = {
 				*renderPass,
 				*layout,
