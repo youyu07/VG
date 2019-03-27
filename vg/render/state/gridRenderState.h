@@ -10,7 +10,8 @@ namespace vg
 		vk::UniquePipelineLayout layout;
 		vk::UniquePipeline pipeline;
 		vku::VertexBuffer vertexBuffer;
-		uint32_t vertexCount = 0;
+		uint32_t mainLineCount = 0;
+		uint32_t lineCount = 0;
 	public:
 		GridRenderState() {}
 
@@ -22,21 +23,25 @@ namespace vg
 
 		void setupResource(const Context& ctx)
 		{
-			auto rectFunc = [](std::vector<glm::vec2>& data,float scale) {
-				data.emplace_back( 10.0f,1.0f * scale );
-				data.emplace_back( -10.0f,1.0f * scale );
+			auto rectFunc = [](std::vector<glm::vec2>& data,float length, float scale) {
+				data.emplace_back(length,1.0f * scale );
+				data.emplace_back( -length,1.0f * scale );
 
-				data.emplace_back( 1.0f * scale,10.0f );
-				data.emplace_back( 1.0f * scale,-10.0f );
+				data.emplace_back( 1.0f * scale, length);
+				data.emplace_back( 1.0f * scale,-length);
 			};
 
 			std::vector<glm::vec2> position;
-			for (float i = -10.0f; i <= 10.0f; i+=1)
-			{
-				rectFunc(position, i);
-			}
+			rectFunc(position,50.0f, 0.0f);
+			mainLineCount = static_cast<uint32_t>(position.size());
 
-			vertexCount = static_cast<uint32_t>(position.size());
+			for (float i = -50.0f; i <= 50.0f; i += 1.0f)
+			{
+				if (i != 0.0f) {
+					rectFunc(position, 50.0f, i);
+				}
+			}
+			lineCount = static_cast<uint32_t>(position.size());
 
 			vertexBuffer = vku::VertexBuffer(ctx, ctx.getMemoryProperties(), sizeof(position));
 			vertexBuffer.upload(ctx, ctx.getMemoryProperties(), ctx.getCommandPool(), ctx.getGraphicsQueue(), position);
@@ -67,7 +72,7 @@ namespace vg
 
 				"void main()\n"
 				"{\n"
-				"	fColor = vec4(0.0,1.0,0.0,0.5);\n"
+				"	fColor = vec4(0.3,0.7,0.4,1.0);\n"
 				"}\n";
 
 			auto plm = vku::PipelineLayoutMaker();
@@ -86,6 +91,7 @@ namespace vg
 			pm.depthWriteEnable(VK_TRUE);
 			pm.lineWidth(1.0f);
 			pm.dynamicState(vk::DynamicState::eLineWidth);
+			pm.rasterizationSamples(vk::SampleCountFlagBits::e8);
 			pm.viewport({ 0.0f,static_cast<float>(ctx.getExtent().height),static_cast<float>(ctx.getExtent().width),-static_cast<float>(ctx.getExtent().height),0.0f,1.0f });
 			pipeline = pm.createUnique(ctx,vk::PipelineCache(),layout.get(),renderPass);
 		}
@@ -98,9 +104,10 @@ namespace vg
 			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.get());
 			cmd.pushConstants(layout.get(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &transform);
 
+			cmd.setLineWidth(3.0f);
+			cmd.draw(mainLineCount, 1, 0, 0);
 			cmd.setLineWidth(1.0f);
-
-			cmd.draw(vertexCount, 1, 0, 0);
+			cmd.draw(lineCount - mainLineCount, 1, mainLineCount, 0);
 		}
 	};
 

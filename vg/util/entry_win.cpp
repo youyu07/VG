@@ -19,11 +19,32 @@ namespace vg
 			PostQuitMessage(0);
 			return 0;
 		case WM_MOUSEWHEEL:
-			entry->mouseWheel(0.0f, (float)GET_WHEEL_DELTA_WPARAM(wParam) / (float)WHEEL_DELTA);
+			entry->mouseEvent({ Entry::MouseEvent::Type::Wheel, 0, (float)GET_WHEEL_DELTA_WPARAM(wParam) / (float)WHEEL_DELTA });
+			break;
+		case WM_LBUTTONDOWN: case WM_LBUTTONDBLCLK:
+		case WM_RBUTTONDOWN: case WM_RBUTTONDBLCLK:
+		case WM_MBUTTONDOWN: case WM_MBUTTONDBLCLK:
+		{
+			auto type = Entry::MouseEvent::Type::LeftDown;
+			if (message == WM_RBUTTONDOWN || message == WM_RBUTTONDBLCLK) { type = Entry::MouseEvent::Type::RightDown; }
+			if (message == WM_MBUTTONDOWN || message == WM_MBUTTONDBLCLK) { type = Entry::MouseEvent::Type::MiddleDown; }
+			entry->mouseEvent({ type,(float)LOWORD(lParam), (float)HIWORD(lParam) });
 			break;
 		}
-
-		
+		case WM_LBUTTONUP:
+		case WM_RBUTTONUP:
+		case WM_MBUTTONUP:
+		{
+			auto type = Entry::MouseEvent::Type::LeftUp;
+			if (message == WM_RBUTTONUP) { type = Entry::MouseEvent::Type::RightUp; }
+			if (message == WM_MBUTTONUP) { type = Entry::MouseEvent::Type::MiddleUp; }
+			entry->mouseEvent({ type,(float)LOWORD(lParam), (float)HIWORD(lParam) });
+			break;
+		}
+		case WM_MOUSEMOVE:
+			entry->mouseEvent({ Entry::MouseEvent::Type::Move,(float)LOWORD(lParam), (float)HIWORD(lParam) });
+			break;
+		}
 
 		return DefWindowProc(hwnd, message, wParam, lParam);
 	}

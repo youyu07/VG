@@ -46,6 +46,9 @@ namespace vg
 				dm.queue(computerQueueFamilyIndex);
 			}
 			dm.extension(VK_KHR_MAINTENANCE1_EXTENSION_NAME);
+			vk::PhysicalDeviceFeatures feature;
+			feature.wideLines = VK_TRUE;
+			dm.features(feature);
 			device = dm.createUnique(physicalDevice);
 
 			graphicsQueue = device->getQueue(graphicsQueueFamilyIndex, 0);

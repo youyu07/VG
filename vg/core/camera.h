@@ -18,8 +18,10 @@ namespace vg
 			Orthographic
 		}type;
 
-		glm::vec3 position = glm::vec3(0.0f);
-		glm::vec3 target = glm::vec3(0.0f);
+		glm::vec3 rotation = glm::vec3();
+		glm::vec3 position = glm::vec3();
+
+		float rotateSpeed = 0.2f;
 
 	public:
 		inline static Camera Perspactive(float fov,float minZ = 0.1f,float maxZ = 1000.0f)
@@ -32,7 +34,15 @@ namespace vg
 		}
 
 		inline glm::mat4 getViewMatrix() const {
-			return glm::lookAt(position, target, glm::vec3(0,1,0));
+			glm::mat4 rotM = glm::mat4(1.0f);
+			glm::mat4 transM;
+
+			rotM = glm::rotate(rotM, glm::radians(rotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
+			rotM = glm::rotate(rotM, glm::radians(rotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
+			rotM = glm::rotate(rotM, glm::radians(rotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
+
+			transM = glm::translate(glm::mat4(1.0f), position);
+			return transM * rotM;
 		}
 
 		inline void setPosition(glm::vec3 pos)
@@ -40,37 +50,19 @@ namespace vg
 			position = pos;
 		}
 
-		inline void zoom(float length)
+		void translate(glm::vec3 delta)
 		{
-			if (length == 0.0f)return;
-			auto dir = position - target;
-			
-			auto dirn = glm::normalize(dir);
-			auto move = dirn * length;
-			if (glm::distance(dir, glm::vec3(0)) <= glm::distance(move,glm::vec3(0))) {
-				return;
-			}
-
-			position -= move;
+			this->position += delta;
 		}
 
-		inline void mouseDownRotate()
+		inline void rotate(glm::vec3 delta)
 		{
-
+			this->rotation += delta;
 		}
 
-		inline void mouseMoveRotate(int x,int y)
+		inline float getRotateSpeed() const
 		{
-			auto end = glm::vec2(x, y);
-			//auto delta = (end - start) * rotateSpeed;
-
-			//rotateLeft(2 * Math.PI * rotateDelta.x / element.clientHeight); // yes, height
-
-			//rotateUp(2 * Math.PI * rotateDelta.y / element.clientHeight);
-
-			//rotateStart.copy(rotateEnd);
-
-			//scope.update();
+			return rotateSpeed;
 		}
 
 		operator bool() const

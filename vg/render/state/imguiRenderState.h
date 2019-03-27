@@ -131,7 +131,7 @@ namespace vg
 				pm.vertexAttribute(2, 0, vk::Format::eR8G8B8A8Unorm, sizeof(float) * 4);
 				pm.dynamicState(vk::DynamicState::eScissor);
 				pm.blendBegin(VK_TRUE);
-
+				pm.rasterizationSamples(vk::SampleCountFlagBits::e8);
 				pipeline = pm.createUnique(ctx.getDevice(), vk::PipelineCache(), layout.get(), renderPass);
 			}
 		}

@@ -397,6 +397,11 @@ public:
     return *this;
   }
 
+  DeviceMaker& features(const vk::PhysicalDeviceFeatures& feature) {
+	  features_ = feature;
+	  return *this;
+  }
+
   /// Add an extension. eg. VK_EXT_DEBUG_REPORT_EXTENSION_NAME
   DeviceMaker &extension(const char *layer) {
     device_extensions_.push_back(layer);
@@ -421,7 +426,7 @@ public:
     return physical_device.createDeviceUnique(vk::DeviceCreateInfo{
         {}, (uint32_t)qci_.size(), qci_.data(),
         (uint32_t)layers_.size(), layers_.data(),
-        (uint32_t)device_extensions_.size(), device_extensions_.data()});
+        (uint32_t)device_extensions_.size(), device_extensions_.data(),&features_});
   }
 private:
   std::vector<const char *> layers_;
@@ -429,6 +434,7 @@ private:
   std::vector<std::vector<float> > queue_priorities_;
   std::vector<vk::DeviceQueueCreateInfo> qci_;
   vk::ApplicationInfo app_info_;
+  vk::PhysicalDeviceFeatures features_;
 };
 
 class DebugCallback {
@@ -531,6 +537,14 @@ public:
       subpass.pColorAttachments = p;
     }
     subpass.colorAttachmentCount++;
+  }
+
+  void subpassResolveAttachment(vk::ImageLayout layout, uint32_t attachment) {
+	  vk::SubpassDescription& subpass = s.subpassDescriptions.back();
+	  auto* p = getAttachmentReference();
+	  p->layout = layout;
+	  p->attachment = attachment;
+	  subpass.pResolveAttachments = p;
   }
 
   void subpassDepthStencilAttachment(vk::ImageLayout layout, uint32_t attachment) {
@@ -1648,7 +1662,7 @@ public:
   DepthStencilImage() {
   }
 
-  DepthStencilImage(vk::Device device, const vk::PhysicalDeviceMemoryProperties &memprops, uint32_t width, uint32_t height, vk::Format format = vk::Format::eD24UnormS8Uint) {
+  DepthStencilImage(vk::Device device, const vk::PhysicalDeviceMemoryProperties &memprops, uint32_t width, uint32_t height, vk::Format format = vk::Format::eD24UnormS8Uint, vk::SampleCountFlagBits sample = vk::SampleCountFlagBits::e1) {
     vk::ImageCreateInfo info;
     info.flags = {};
 
@@ -1657,7 +1671,7 @@ public:
     info.extent = vk::Extent3D{ width, height, 1U };
     info.mipLevels = 1;
     info.arrayLayers = 1;
-    info.samples = vk::SampleCountFlagBits::e1;
+    info.samples = sample;
     info.tiling = vk::ImageTiling::eOptimal;
     info.usage = vk::ImageUsageFlagBits::eDepthStencilAttachment|vk::ImageUsageFlagBits::eTransferSrc|vk::ImageUsageFlagBits::eSampled;
     info.sharingMode = vk::SharingMode::eExclusive;
@@ -1676,7 +1690,7 @@ public:
   ColorAttachmentImage() {
   }
 
-  ColorAttachmentImage(vk::Device device, const vk::PhysicalDeviceMemoryProperties &memprops, uint32_t width, uint32_t height, vk::Format format = vk::Format::eR8G8B8A8Unorm) {
+  ColorAttachmentImage(vk::Device device, const vk::PhysicalDeviceMemoryProperties &memprops, uint32_t width, uint32_t height, vk::Format format = vk::Format::eB8G8R8A8Unorm, vk::SampleCountFlagBits sample = vk::SampleCountFlagBits::e1) {
     vk::ImageCreateInfo info;
     info.flags = {};
 
@@ -1685,7 +1699,7 @@ public:
     info.extent = vk::Extent3D{ width, height, 1U };
     info.mipLevels = 1;
     info.arrayLayers = 1;
-    info.samples = vk::SampleCountFlagBits::e1;
+    info.samples = sample;
     info.tiling = vk::ImageTiling::eOptimal;
     info.usage = vk::ImageUsageFlagBits::eColorAttachment|vk::ImageUsageFlagBits::eTransferSrc|vk::ImageUsageFlagBits::eSampled;
     info.sharingMode = vk::SharingMode::eExclusive;

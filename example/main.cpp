@@ -12,7 +12,8 @@ public:
 	virtual void init() override
 	{
 		renderer.setup(getInfo().handle);
-		camera.setPosition(glm::vec3(0, 50, 100));
+		camera.translate(glm::vec3(0, 0, -10));
+		camera.rotate(glm::vec3(45, -45, 0.0f));
 
 		auto geometry = vg::SimpleGeometry::createSphere();
 
@@ -28,7 +29,7 @@ public:
 	{
 		ImGui::NewFrame();
 
-		static bool show_demo_window = true;
+		static bool show_demo_window = false;
 		static bool show_another_window = false;
 		static float clear_color[3] = { 0.0f };
 
@@ -74,9 +75,57 @@ public:
 		renderer.bindCamera(camera);
 	}
 
-	virtual void mouseWheel(float x, float y) override
+	virtual void mouseEvent(const MouseEvent& event) override
 	{
-		camera.zoom(y);
+		static bool mouseDown[3];
+		static float x, y;
+
+		float dx = event.x - x;
+		float dy = event.y - y;
+
+		x = event.x;
+		y = event.y;
+
+		ImGuiIO& io = ImGui::GetIO();
+		if (io.WantCaptureMouse) {
+			return;
+		}
+
+		switch (event.type)
+		{
+		case MouseEvent::Type::Wheel:
+			camera.translate(glm::vec3(0, 0, event.y));
+			break;
+		case MouseEvent::Type::LeftDown:
+			mouseDown[0] = true;
+			break;
+		case MouseEvent::Type::RightDown:
+			mouseDown[1] = true;
+			break;
+		case MouseEvent::Type::MiddleDown:
+			mouseDown[2] = true;
+			break;
+		case MouseEvent::Type::LeftUp:
+			mouseDown[0] = false;
+			break;
+		case MouseEvent::Type::RightUp:
+			mouseDown[1] = false;
+			break;
+		case MouseEvent::Type::MiddleUp:
+			mouseDown[2] = false;
+			break;
+		case MouseEvent::Type::Move:
+			{
+				if (mouseDown[0]) {
+					camera.rotate(glm::vec3(dy, dx, 0.0f) * camera.getRotateSpeed());
+				}
+
+				if (mouseDown[2]) {
+					camera.translate(glm::vec3(dx * 0.01f, -dy * 0.01f, 0.0f));
+				}
+				break;
+			}
+		}
 	}
 
 	virtual void draw() override

@@ -19,6 +19,13 @@ namespace vg
 
 		vku::DepthStencilImage depth;
 
+		struct
+		{
+			vku::ColorAttachmentImage color;
+			vku::DepthStencilImage depth;
+			vk::SampleCountFlagBits sample = vk::SampleCountFlagBits::e8;
+		}multiSample;
+
 		std::vector<vk::UniqueFramebuffer> frameBuffers;
 		std::vector<vk::UniqueCommandBuffer> drawCommandBuffers;
 
@@ -43,31 +50,56 @@ namespace vg
 		RendererImpl(const void* windowHandle) {
 			ctx = Context{ windowHandle };
 
+			auto colorFormat = ctx.getSwapchainFormat();
+			auto depthFormat = vk::Format::eD24UnormS8Uint;
 			{
 				vku::RenderpassMaker rm;
-				rm.attachmentBegin(ctx.getSwapchainFormat());
+				rm.attachmentBegin(colorFormat);
+				rm.attachmentSamples(multiSample.sample);
 				rm.attachmentLoadOp(vk::AttachmentLoadOp::eClear);
 				rm.attachmentStoreOp(vk::AttachmentStoreOp::eStore);
+				rm.attachmentStencilLoadOp(vk::AttachmentLoadOp::eDontCare);
+				rm.attachmentStencilStoreOp(vk::AttachmentStoreOp::eDontCare);
+				rm.attachmentFinalLayout(vk::ImageLayout::eColorAttachmentOptimal);
+
+				rm.attachmentBegin(colorFormat);
+				rm.attachmentLoadOp(vk::AttachmentLoadOp::eDontCare);
+				rm.attachmentStoreOp(vk::AttachmentStoreOp::eStore);
+				rm.attachmentStencilLoadOp(vk::AttachmentLoadOp::eDontCare);
+				rm.attachmentStencilStoreOp(vk::AttachmentStoreOp::eDontCare);
 				rm.attachmentFinalLayout(vk::ImageLayout::ePresentSrcKHR);
 
-				rm.attachmentBegin(vk::Format::eD24UnormS8Uint);
+				rm.attachmentBegin(depthFormat);
+				rm.attachmentSamples(multiSample.sample);
 				rm.attachmentLoadOp(vk::AttachmentLoadOp::eClear);
+				rm.attachmentStoreOp(vk::AttachmentStoreOp::eDontCare);
+				rm.attachmentStencilLoadOp(vk::AttachmentLoadOp::eDontCare);
+				rm.attachmentStencilStoreOp(vk::AttachmentStoreOp::eDontCare);
+				rm.attachmentFinalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
+
+				rm.attachmentBegin(depthFormat);
+				rm.attachmentLoadOp(vk::AttachmentLoadOp::eDontCare);
 				rm.attachmentStoreOp(vk::AttachmentStoreOp::eStore);
+				rm.attachmentStencilLoadOp(vk::AttachmentLoadOp::eDontCare);
+				rm.attachmentStencilStoreOp(vk::AttachmentStoreOp::eDontCare);
 				rm.attachmentFinalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
 
 				rm.subpassBegin(vk::PipelineBindPoint::eGraphics);
 				rm.subpassColorAttachment(vk::ImageLayout::eColorAttachmentOptimal, 0);
-				rm.subpassDepthStencilAttachment(vk::ImageLayout::eDepthStencilAttachmentOptimal, 1);
+				rm.subpassResolveAttachment(vk::ImageLayout::eColorAttachmentOptimal, 1);
+				rm.subpassDepthStencilAttachment(vk::ImageLayout::eDepthStencilAttachmentOptimal, 2);
 				renderPass = rm.createUnique(ctx.getDevice());
 			}
 
 			{
 				depth = vku::DepthStencilImage(ctx, ctx.getMemoryProperties(), ctx.getExtent().width, ctx.getExtent().height);
+				multiSample.color = vku::ColorAttachmentImage(ctx, ctx.getMemoryProperties(), ctx.getExtent().width, ctx.getExtent().height, colorFormat, multiSample.sample);
+				multiSample.depth = vku::DepthStencilImage(ctx, ctx.getMemoryProperties(), ctx.getExtent().width, ctx.getExtent().height, depthFormat, multiSample.sample);
 
 				for (uint32_t i = 0; i < ctx.getSwapchainImageCount(); i++)
 				{
-					vk::ImageView attachment[2] = { ctx.getSwapchainImageView(i),depth.imageView() };
-					auto frameInfo = vk::FramebufferCreateInfo({}, renderPass.get(), 2, attachment, ctx.getExtent().width, ctx.getExtent().height, 1);
+					vk::ImageView attachment[4] = { multiSample.color.imageView(), ctx.getSwapchainImageView(i),multiSample.depth.imageView(), depth.imageView() };
+					auto frameInfo = vk::FramebufferCreateInfo({}, renderPass.get(), 4, attachment, ctx.getExtent().width, ctx.getExtent().height, 1);
 					frameBuffers.emplace_back(ctx.getDevice().createFramebufferUnique(frameInfo));
 				}
 			}
@@ -88,9 +120,9 @@ namespace vg
 
 			cmd.begin(vk::CommandBufferBeginInfo());
 
-			std::array<float, 4> clearColorValue{ 0.75f, 0.75f, 0.75f, 1 };
+			std::array<float, 4> clearColorValue{ 0.2f, 0.2f, 0.2f, 1 };
 			vk::ClearDepthStencilValue clearDepthValue{ 1.0f, 0 };
-			std::array<vk::ClearValue, 2> clearColours{ vk::ClearValue{clearColorValue}, clearDepthValue };
+			std::array<vk::ClearValue, 3> clearColours{ vk::ClearValue{clearColorValue},vk::ClearValue{clearColorValue}, clearDepthValue };
 			vk::RenderPassBeginInfo beginInfo;
 			beginInfo.renderPass = renderPass.get();
 			beginInfo.framebuffer = frameBuffers.at(index).get();

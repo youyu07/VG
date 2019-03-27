@@ -19,10 +19,28 @@ namespace vg
 #endif
 	};
 
+	
+
 
     class __declspec(dllexport) Entry
     {
     public:
+		struct MouseEvent
+		{
+			enum class Type
+			{
+				LeftDown,
+				LeftUp,
+				RightDown,
+				RightUp,
+				MiddleDown,
+				MiddleUp,
+				Wheel,
+				Move
+			}type;
+			float x, y;
+		};
+
 		virtual void init() = 0;
 		virtual void update() = 0;
 		virtual void draw() = 0;
@@ -45,7 +63,7 @@ namespace vg
 			return windowInfo;
 		}
 
-		virtual void mouseWheel(float x,float y) {}
+		virtual void mouseEvent(const MouseEvent& event) {}
     private:
 		WindowInfo windowInfo;
     };
