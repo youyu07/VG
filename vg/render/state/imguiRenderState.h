@@ -120,12 +120,9 @@ namespace vg
 				layout = plm.createUnique(ctx.getDevice());
 			}
 			{
-				auto vertData = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eVertex, vert);
-				auto fragData = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eFragment, frag);
-				auto vertShader = vku::ShaderModule(ctx.getDevice(), vertData.begin(), vertData.end());
-				auto fragShader = vku::ShaderModule(ctx.getDevice(), fragData.begin(), fragData.end());
-
-				vku::PipelineMaker pm{ ctx.getExtent().width, ctx.getExtent().height };
+				auto vertShader = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eVertex, vert);
+				auto fragShader = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eFragment, frag);
+				auto pm = vku::PipelineMaker{ ctx.getExtent().width,ctx.getExtent().height };
 				pm.shader(vk::ShaderStageFlagBits::eVertex, vertShader);
 				pm.shader(vk::ShaderStageFlagBits::eFragment, fragShader);
 				pm.vertexBinding(0,sizeof(float)*5);

@@ -11,12 +11,19 @@ namespace vg
 	{
 		ImGui::win32_WndProcHandler(hwnd, message, wParam, lParam);
 
+		auto entry = (Entry*)::GetWindowLongPtr(hwnd, GWLP_USERDATA);
+
 		switch (message)
 		{
 		case WM_DESTROY:
 			PostQuitMessage(0);
 			return 0;
+		case WM_MOUSEWHEEL:
+			entry->mouseWheel(0.0f, (float)GET_WHEEL_DELTA_WPARAM(wParam) / (float)WHEEL_DELTA);
+			break;
 		}
+
+		
 
 		return DefWindowProc(hwnd, message, wParam, lParam);
 	}
@@ -53,9 +60,9 @@ namespace vg
 		);
 
 		// 以下两条语句用来显示Window
-		ShowWindow(windowInfo.handle, SW_SHOWDEFAULT);
-		UpdateWindow(windowInfo.handle);
-
+		::ShowWindow(windowInfo.handle, SW_SHOWDEFAULT);
+		::UpdateWindow(windowInfo.handle);
+		::SetWindowLongPtr(windowInfo.handle, GWLP_USERDATA, (LONG_PTR)this);
 		ImGui::win32_Init(windowInfo.handle);
 
 		init();

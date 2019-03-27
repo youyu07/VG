@@ -44,6 +44,8 @@ namespace vg
 		{
 			return windowInfo;
 		}
+
+		virtual void mouseWheel(float x,float y) {}
     private:
 		WindowInfo windowInfo;
     };

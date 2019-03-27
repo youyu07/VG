@@ -45,6 +45,7 @@ namespace vg
 			if (computerQueueFamilyIndex != graphicsQueueFamilyIndex) {
 				dm.queue(computerQueueFamilyIndex);
 			}
+			dm.extension(VK_KHR_MAINTENANCE1_EXTENSION_NAME);
 			device = dm.createUnique(physicalDevice);
 
 			graphicsQueue = device->getQueue(graphicsQueueFamilyIndex, 0);
@@ -147,7 +148,7 @@ namespace vg
 		return std::move(code);
 	}
 
-	std::vector<uint32_t> Context::compileGLSLToSpv(vk::ShaderStageFlagBits stage,const std::string& src) const
+	vku::ShaderModule Context::compileGLSLToSpv(vk::ShaderStageFlagBits stage,const std::string& src) const
 	{
 		shaderc_compiler_t compiler = shaderc_compiler_initialize();
 		auto result = shaderc_compile_into_spv(
@@ -163,11 +164,12 @@ namespace vg
 		auto bytes = (uint32_t*)shaderc_result_get_bytes(result);
 
 		std::vector<uint32_t> data(bytes, bytes + length/4);
+		auto module = vku::ShaderModule(getDevice(), data.begin(), data.end());
 
 		// Do stuff with compilation results.
 		shaderc_result_release(result);
 		shaderc_compiler_release(compiler);
 
-		return std::move(data);
+		return std::move(module);
 	}
 }

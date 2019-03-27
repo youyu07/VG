@@ -8,7 +8,6 @@ namespace vg
 	class Camera
 	{
 		float fov = 45.f;
-		float aspect = 1.0f;
 		float minZ = 0.1f;
 		float maxZ = 1000.0f;
 
@@ -19,21 +18,40 @@ namespace vg
 			Orthographic
 		}type;
 
-		glm::vec3 position;
-		glm::vec3 rotation;
+		glm::vec3 position = glm::vec3(0.0f);
+		glm::vec3 target = glm::vec3(0.0f);
 
 	public:
-		inline static Camera Perspactive(float fov,float aspect,float minZ = 0.1f,float maxZ = 1000.0f)
+		inline static Camera Perspactive(float fov,float minZ = 0.1f,float maxZ = 1000.0f)
 		{
-			return { fov,aspect,minZ,maxZ };
+			return { fov,minZ,maxZ };
 		}
 
-		inline glm::mat4 getProjectionMatrix() {
-			return glm::perspective(fov, aspect, minZ, maxZ);
+		inline glm::mat4 getProjectionMatrix(float aspect) const {
+			return glm::perspective(glm::radians(fov), aspect, minZ, maxZ);
 		}
 
-		inline glm::mat4 getViewMatrix() {
-			return glm::lookAt(position, glm::vec3(), glm::vec3());
+		inline glm::mat4 getViewMatrix() const {
+			return glm::lookAt(position, target, glm::vec3(0,1,0));
+		}
+
+		inline void setPosition(glm::vec3 pos)
+		{
+			position = pos;
+		}
+
+		inline void zoom(float length)
+		{
+			if (length == 0.0f)return;
+			auto dir = position - target;
+			
+			auto dirn = glm::normalize(dir);
+			auto move = dirn * length;
+			if (glm::distance(dir, glm::vec3(0)) <= glm::distance(move,glm::vec3(0))) {
+				return;
+			}
+
+			position -= move;
 		}
 
 		inline void mouseDownRotate()
@@ -60,7 +78,7 @@ namespace vg
 			return type != Type::Undefined;
 		}
 	private:
-		Camera(float fov, float aspect, float minZ, float maxZ) : fov(fov),aspect(aspect),minZ(minZ),maxZ(maxZ),type(Type::Perspective){}
+		Camera(float fov, float minZ, float maxZ) : fov(fov),minZ(minZ),maxZ(maxZ),type(Type::Perspective){}
 
 	};
 

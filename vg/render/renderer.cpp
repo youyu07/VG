@@ -5,6 +5,7 @@
 #include "context.h"
 #include <vku.hpp>
 #include <core/log.h>
+#include <glm/ext.hpp>
 
 #include "state/renderState.h"
 
@@ -26,6 +27,18 @@ namespace vg
 		vk::UniqueFence drawFence;
 
 		ImguiRenderState imguiState;
+		GridRenderState gridState;
+		
+	public:
+		struct
+		{
+			glm::mat4 projection;
+			glm::mat4 view;
+
+			glm::mat4 getProjectionViewMaxtirx() {
+				return projection * view;
+			}
+		}matrix;
 	public:
 		RendererImpl(const void* windowHandle) {
 			ctx = Context{ windowHandle };
@@ -62,6 +75,7 @@ namespace vg
 			drawCommandBuffers = ctx.getDevice().allocateCommandBuffersUnique({ ctx.getCommandPool(),vk::CommandBufferLevel::ePrimary,static_cast<uint32_t>(frameBuffers.size()) });
 
 			imguiState = ImguiRenderState(ctx, renderPass.get());
+			gridState = GridRenderState(ctx, renderPass.get());
 
 			acquireSemaphore = ctx.getDevice().createSemaphoreUnique({});
 			drawCompleteSemaphore = ctx.getDevice().createSemaphoreUnique({});
@@ -85,6 +99,7 @@ namespace vg
 			beginInfo.pClearValues = clearColours.data();
 			cmd.beginRenderPass(beginInfo,vk::SubpassContents::eInline);
 
+			gridState.draw(ctx, cmd, matrix.getProjectionViewMaxtirx());
 			imguiState.draw(ctx, cmd);
 
 			cmd.endRenderPass();
@@ -124,6 +139,11 @@ namespace vg
 			presentInfo.pWaitSemaphores = &drawCompleteSemaphore.get();
 			ctx.getGraphicsQueue().presentKHR(presentInfo);
 		}
+
+		float getAspect()
+		{
+			return static_cast<float>(ctx.getExtent().width) / static_cast<float>(ctx.getExtent().height);
+		}
 	};
 
 	void Renderer::setup(const void* windowHandle)
@@ -136,6 +156,12 @@ namespace vg
 	void Renderer::draw()
 	{
 		impl->draw();
+	}
+
+	void Renderer::bindCamera(const Camera& camera)
+	{
+		impl->matrix.projection = camera.getProjectionMatrix(impl->getAspect());
+		impl->matrix.view = camera.getViewMatrix();
 	}
 
 	DeviceHandle Renderer::createGeometry(const GeometryBufferInfo& geometry)

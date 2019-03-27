@@ -2,14 +2,17 @@
 #include <util/geometry.h>
 #include <render/renderer.h>
 #include <imgui/imgui.h>
+#include <glm/ext.hpp>
+#include <core/camera.h>
 
 class Demo : public vg::Entry
 {
-
+	vg::Camera camera = vg::Camera::Perspactive(45.0f);
 public:
 	virtual void init() override
 	{
 		renderer.setup(getInfo().handle);
+		camera.setPosition(glm::vec3(0, 50, 100));
 
 		auto geometry = vg::SimpleGeometry::createSphere();
 
@@ -67,6 +70,13 @@ public:
 
 		// Rendering
 		ImGui::Render();
+
+		renderer.bindCamera(camera);
+	}
+
+	virtual void mouseWheel(float x, float y) override
+	{
+		camera.zoom(y);
 	}
 
 	virtual void draw() override

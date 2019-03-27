@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vulkan/vulkan.hpp>
+#include <vku.hpp>
 
 namespace vg
 {
@@ -34,7 +34,7 @@ namespace vg
 
 		void createSwapchain();
 
-		std::vector<uint32_t> compileGLSLToSpv(vk::ShaderStageFlagBits stage,const std::string& src) const;
+		vku::ShaderModule compileGLSLToSpv(vk::ShaderStageFlagBits stage,const std::string& src) const;
 
 		inline const vk::Queue& getGraphicsQueue() const { return graphicsQueue; }
 		inline const vk::Queue& getComputerQueue() const { return computerQueue; }
