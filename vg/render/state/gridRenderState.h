@@ -15,8 +15,17 @@ namespace vg
 	public:
 		GridRenderState() {}
 
+		void resize(const Context& ctx, vk::RenderPass renderPass)
+		{
+			setupPipeline(ctx, renderPass);
+		}
+
 		GridRenderState(const Context& ctx, vk::RenderPass renderPass)
 		{
+			auto plm = vku::PipelineLayoutMaker();
+			plm.pushConstantRange(vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4));
+			layout = plm.createUnique(ctx);
+
 			setupPipeline(ctx, renderPass);
 			setupResource(ctx);
 		}
@@ -75,10 +84,6 @@ namespace vg
 				"	fColor = vec4(0.3,0.7,0.4,1.0);\n"
 				"}\n";
 
-			auto plm = vku::PipelineLayoutMaker();
-			plm.pushConstantRange(vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4));
-			layout = plm.createUnique(ctx);
-
 			auto vertShader = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eVertex, vert);
 			auto fragShader = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eFragment, frag);
 			auto pm = vku::PipelineMaker{ ctx.getExtent().width,ctx.getExtent().height };
@@ -91,7 +96,7 @@ namespace vg
 			pm.depthWriteEnable(VK_TRUE);
 			pm.lineWidth(1.0f);
 			pm.dynamicState(vk::DynamicState::eLineWidth);
-			pm.rasterizationSamples(vk::SampleCountFlagBits::e8);
+			pm.rasterizationSamples(Context::getSample());
 			pm.viewport({ 0.0f,static_cast<float>(ctx.getExtent().height),static_cast<float>(ctx.getExtent().width),-static_cast<float>(ctx.getExtent().height),0.0f,1.0f });
 			pipeline = pm.createUnique(ctx,vk::PipelineCache(),layout.get(),renderPass);
 		}

@@ -74,10 +74,9 @@ namespace vg
 			auto info = vk::Win32SurfaceCreateInfoKHR({}, GetModuleHandle(NULL), (HWND)windowHandle);
 			surface = instance->createWin32SurfaceKHRUnique(info);
 		}
+		commandPool = device->createCommandPoolUnique({ vk::CommandPoolCreateFlagBits::eResetCommandBuffer,graphicsQueueFamilyIndex });
 
 		createSwapchain();
-
-		commandPool = device->createCommandPoolUnique({ vk::CommandPoolCreateFlagBits::eResetCommandBuffer,graphicsQueueFamilyIndex });
 	}
 
 	void Context::createSwapchain()
@@ -91,7 +90,9 @@ namespace vg
 
 		auto capabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface.get());
 		vk::SwapchainCreateInfoKHR info;
+
 		info.imageExtent = capabilities.currentExtent;
+		
 		info.preTransform = capabilities.currentTransform;
 		info.surface = surface.get();
 		info.imageUsage = vk::ImageUsageFlagBits::eColorAttachment;
@@ -99,22 +100,24 @@ namespace vg
 		info.pQueueFamilyIndices = &graphicsQueueFamilyIndex;
 		info.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
 		info.presentMode = vk::PresentModeKHR::eFifo;
-		info.minImageCount = 2;
-		info.imageFormat = vk::Format::eB8G8R8A8Unorm;
+		info.minImageCount = 3;
+		info.imageFormat = getSwapchainFormat();
 		info.imageColorSpace = vk::ColorSpaceKHR::eVkColorspaceSrgbNonlinear;
 		info.imageArrayLayers = 1;
 		info.clipped = VK_TRUE;
+		info.oldSwapchain = swapchain.get();
 
 		swapchain = device->createSwapchainKHRUnique(info);
 
 		swapchainImages = device->getSwapchainImagesKHR(swapchain.get());
+
+		swapchainImageViews.clear();
 		for (auto& img : swapchainImages)
 		{
 			auto viewInfo = vk::ImageViewCreateInfo({}, img, vk::ImageViewType::e2D, info.imageFormat, {}, { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 });
 			swapchainImageViews.emplace_back(device->createImageViewUnique(viewInfo));
 		}
 
-		swapchainFormat = info.imageFormat;
 		extent = info.imageExtent;
 	}
 
@@ -175,4 +178,9 @@ namespace vg
 
 		return std::move(module);
 	}
+
+
+	vk::SampleCountFlagBits Context::sample = vk::SampleCountFlagBits::e4;
+	vk::Format Context::swapchainFormat = vk::Format::eB8G8R8A8Unorm;
+	vk::Format Context::depthFormat = vk::Format::eD24UnormS8Uint;
 }

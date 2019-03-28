@@ -4,6 +4,7 @@
 
 namespace vg
 {
+
 	class Context
 	{
 		vk::UniqueInstance instance;
@@ -24,9 +25,12 @@ namespace vg
 
 		std::vector<vk::Image> swapchainImages;
 		std::vector<vk::UniqueImageView> swapchainImageViews;
-
-		vk::Format swapchainFormat;
 		vk::UniqueCommandPool commandPool;
+
+		//global variable
+		static vk::SampleCountFlagBits sample;
+		static vk::Format swapchainFormat;
+		static vk::Format depthFormat;
 	public:
 		Context() {};
 
@@ -44,7 +48,6 @@ namespace vg
 		inline const vk::DescriptorPool& getDescriptorPool() const { return descriptorPool.get(); }
 		inline const vk::PhysicalDeviceMemoryProperties& getMemoryProperties() const { return memoryProperties; }
 		inline const vk::Extent2D& getExtent() const { return extent; }
-		inline const vk::Format& getSwapchainFormat() const { return swapchainFormat; }
 		inline uint32_t getSwapchainImageCount() const { return static_cast<uint32_t>(swapchainImages.size()); }
 		inline const vk::ImageView& getSwapchainImageView(uint32_t index) const { return swapchainImageViews.at(index).get(); }
 
@@ -52,6 +55,11 @@ namespace vg
 		{
 			return device.get();
 		}
+
+	public:
+		static vk::SampleCountFlagBits getSample() { return sample; }
+		static vk::Format getSwapchainFormat() { return swapchainFormat; }
+		static vk::Format getDepthFormat() { return depthFormat; }
 	};
 
 }

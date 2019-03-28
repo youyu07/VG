@@ -14,6 +14,8 @@ namespace vg
 
 		void draw();
 
+		void resize();
+
 		DeviceHandle createGeometry(const GeometryBufferInfo& geometry);
 
 		void bindCamera(const Camera& camera);

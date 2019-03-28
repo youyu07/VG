@@ -23,7 +23,6 @@ namespace vg
 		{
 			vku::ColorAttachmentImage color;
 			vku::DepthStencilImage depth;
-			vk::SampleCountFlagBits sample = vk::SampleCountFlagBits::e8;
 		}multiSample;
 
 		std::vector<vk::UniqueFramebuffer> frameBuffers;
@@ -46,16 +45,18 @@ namespace vg
 				return projection * view;
 			}
 		}matrix;
+
+		bool prepared = false;
 	public:
 		RendererImpl(const void* windowHandle) {
 			ctx = Context{ windowHandle };
 
-			auto colorFormat = ctx.getSwapchainFormat();
-			auto depthFormat = vk::Format::eD24UnormS8Uint;
+			auto colorFormat = Context::getSwapchainFormat();
+			auto depthFormat = Context::getDepthFormat();
 			{
 				vku::RenderpassMaker rm;
 				rm.attachmentBegin(colorFormat);
-				rm.attachmentSamples(multiSample.sample);
+				rm.attachmentSamples(Context::getSample());
 				rm.attachmentLoadOp(vk::AttachmentLoadOp::eClear);
 				rm.attachmentStoreOp(vk::AttachmentStoreOp::eStore);
 				rm.attachmentStencilLoadOp(vk::AttachmentLoadOp::eDontCare);
@@ -70,7 +71,7 @@ namespace vg
 				rm.attachmentFinalLayout(vk::ImageLayout::ePresentSrcKHR);
 
 				rm.attachmentBegin(depthFormat);
-				rm.attachmentSamples(multiSample.sample);
+				rm.attachmentSamples(Context::getSample());
 				rm.attachmentLoadOp(vk::AttachmentLoadOp::eClear);
 				rm.attachmentStoreOp(vk::AttachmentStoreOp::eDontCare);
 				rm.attachmentStencilLoadOp(vk::AttachmentLoadOp::eDontCare);
@@ -91,20 +92,7 @@ namespace vg
 				renderPass = rm.createUnique(ctx.getDevice());
 			}
 
-			{
-				depth = vku::DepthStencilImage(ctx, ctx.getMemoryProperties(), ctx.getExtent().width, ctx.getExtent().height);
-				multiSample.color = vku::ColorAttachmentImage(ctx, ctx.getMemoryProperties(), ctx.getExtent().width, ctx.getExtent().height, colorFormat, multiSample.sample);
-				multiSample.depth = vku::DepthStencilImage(ctx, ctx.getMemoryProperties(), ctx.getExtent().width, ctx.getExtent().height, depthFormat, multiSample.sample);
-
-				for (uint32_t i = 0; i < ctx.getSwapchainImageCount(); i++)
-				{
-					vk::ImageView attachment[4] = { multiSample.color.imageView(), ctx.getSwapchainImageView(i),multiSample.depth.imageView(), depth.imageView() };
-					auto frameInfo = vk::FramebufferCreateInfo({}, renderPass.get(), 4, attachment, ctx.getExtent().width, ctx.getExtent().height, 1);
-					frameBuffers.emplace_back(ctx.getDevice().createFramebufferUnique(frameInfo));
-				}
-			}
-
-			drawCommandBuffers = ctx.getDevice().allocateCommandBuffersUnique({ ctx.getCommandPool(),vk::CommandBufferLevel::ePrimary,static_cast<uint32_t>(frameBuffers.size()) });
+			drawCommandBuffers = ctx.getDevice().allocateCommandBuffersUnique({ ctx.getCommandPool(),vk::CommandBufferLevel::ePrimary,ctx.getSwapchainImageCount() });
 
 			imguiState = ImguiRenderState(ctx, renderPass.get());
 			gridState = GridRenderState(ctx, renderPass.get());
@@ -112,6 +100,39 @@ namespace vg
 			acquireSemaphore = ctx.getDevice().createSemaphoreUnique({});
 			drawCompleteSemaphore = ctx.getDevice().createSemaphoreUnique({});
 			drawFence = ctx.getDevice().createFenceUnique({vk::FenceCreateFlagBits::eSignaled});
+			setupFrameBuffer();
+
+			prepared = true;
+		}
+
+		void setupFrameBuffer()
+		{
+			depth = vku::DepthStencilImage(ctx, ctx.getMemoryProperties(), ctx.getExtent().width, ctx.getExtent().height, Context::getDepthFormat());
+			multiSample.color = vku::ColorAttachmentImage(ctx, ctx.getMemoryProperties(), ctx.getExtent().width, ctx.getExtent().height, Context::getSwapchainFormat(), Context::getSample());
+			multiSample.depth = vku::DepthStencilImage(ctx, ctx.getMemoryProperties(), ctx.getExtent().width, ctx.getExtent().height, Context::getDepthFormat(), Context::getSample());
+
+			for (uint32_t i = 0; i < ctx.getSwapchainImageCount(); i++)
+			{
+				vk::ImageView attachment[4] = { multiSample.color.imageView(), ctx.getSwapchainImageView(i),multiSample.depth.imageView(), depth.imageView() };
+				auto frameInfo = vk::FramebufferCreateInfo({}, renderPass.get(), 4, attachment, ctx.getExtent().width, ctx.getExtent().height, 1);
+				frameBuffers.emplace_back(ctx.getDevice().createFramebufferUnique(frameInfo));
+			}
+		}
+
+		void resize() {
+			if (!prepared) {
+				return;
+			}
+			prepared = false;
+			ctx.getDevice().waitIdle();
+			ctx.createSwapchain();
+
+			frameBuffers.clear();
+			setupFrameBuffer();
+			imguiState.resize(ctx, renderPass.get());
+			gridState.resize(ctx, renderPass.get());
+
+			prepared = true;
 		}
 
 		void buildCommandBuffer(uint32_t index)
@@ -142,12 +163,27 @@ namespace vg
 		{
 			const auto& device = ctx.getDevice();
 
-			uint32_t imageIndex = 0;
-			auto result = device.acquireNextImageKHR(ctx.getSwapchain(), std::numeric_limits<uint64_t>::max(), acquireSemaphore.get(), vk::Fence());
-			imageIndex = result.value;
-
-			device.waitForFences(drawFence.get(),VK_TRUE, std::numeric_limits<uint64_t>::max());
+			device.waitForFences(drawFence.get(), VK_TRUE, std::numeric_limits<uint64_t>::max());
 			device.resetFences(drawFence.get());
+
+			uint32_t imageIndex = 0;
+			vk::Result result;
+			do {
+				result = device.acquireNextImageKHR(ctx.getSwapchain(), std::numeric_limits<uint64_t>::max(), acquireSemaphore.get(), vk::Fence(), &imageIndex);
+				if (result == vk::Result::eErrorOutOfDateKHR) {
+					// demo->swapchain is out of date (e.g. the window was resized) and
+					// must be recreated:
+					resize();
+				}
+				else if (result == vk::Result::eSuboptimalKHR) {
+					// swapchain is not as optimal as it could be, but the platform's
+					// presentation engine will still present the image correctly.
+					break;
+				}
+				else {
+					assert(result == vk::Result::eSuccess);
+				}
+			} while (result != vk::Result::eSuccess);
 
 			buildCommandBuffer(imageIndex);
 
@@ -169,7 +205,20 @@ namespace vg
 			presentInfo.pImageIndices = &imageIndex;
 			presentInfo.waitSemaphoreCount = 1;
 			presentInfo.pWaitSemaphores = &drawCompleteSemaphore.get();
-			ctx.getGraphicsQueue().presentKHR(presentInfo);
+			result = ctx.getGraphicsQueue().presentKHR(&presentInfo);
+
+			if (result == vk::Result::eErrorOutOfDateKHR) {
+				// swapchain is out of date (e.g. the window was resized) and
+				// must be recreated:
+				resize();
+			}
+			else if (result == vk::Result::eSuboptimalKHR) {
+				// swapchain is not as optimal as it could be, but the platform's
+				// presentation engine will still present the image correctly.
+			}
+			else {
+				assert(result == vk::Result::eSuccess);
+			}
 		}
 
 		float getAspect()
@@ -187,7 +236,14 @@ namespace vg
 
 	void Renderer::draw()
 	{
-		impl->draw();
+		if (impl->prepared) {
+			impl->draw();
+		}
+	}
+
+	void Renderer::resize()
+	{
+
 	}
 
 	void Renderer::bindCamera(const Camera& camera)

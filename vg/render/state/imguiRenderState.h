@@ -7,7 +7,6 @@ namespace vg
 {
 	class ImguiRenderState
 	{
-	public:
 		vk::UniqueSampler sampler;
 
 		vk::UniqueDescriptorSetLayout setLayout;
@@ -19,13 +18,16 @@ namespace vg
 
 		vku::GenericBuffer vertexBuffer;
 		vku::GenericBuffer indexBuffer;
-
+	public:
 		ImguiRenderState() {}
+
+		void resize(const Context& ctx, vk::RenderPass renderPass)
+		{
+			setupPipeline(ctx, renderPass);
+		}
 
 		ImguiRenderState(const Context& ctx, vk::RenderPass renderPass)
 		{
-			setupPipeline(ctx,renderPass);
-
 			{
 				vku::SamplerMaker sm{};
 				sampler = sm.createUnique(ctx.getDevice());
@@ -47,6 +49,18 @@ namespace vg
 			}
 			
 			{
+				vku::DescriptorSetLayoutMaker dsm;
+				dsm.image(0, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment, 1);
+				setLayout = dsm.createUnique(ctx.getDevice());
+			}
+			{
+				vku::PipelineLayoutMaker plm{};
+				plm.descriptorSetLayout(setLayout.get());
+				plm.pushConstantRange(vk::ShaderStageFlagBits::eVertex, 0, 16);
+				layout = plm.createUnique(ctx.getDevice());
+			}
+
+			{
 				vku::DescriptorSetMaker dsm;
 				dsm.layout(setLayout.get());
 				descriptorSet = std::move(dsm.createUnique(ctx.getDevice(), ctx.getDescriptorPool()).at(0));
@@ -60,6 +74,8 @@ namespace vg
 
 				update.update(ctx.getDevice());
 			}
+
+			setupPipeline(ctx, renderPass);
 		}
 
 		void setupPipeline(const Context& ctx, vk::RenderPass renderPass)
@@ -107,18 +123,6 @@ namespace vg
 				"	fColor = In.Color * texture(sTexture, In.UV.st);\n"
 				"}\n";
 
-			
-			{
-				vku::DescriptorSetLayoutMaker dsm;
-				dsm.image(0, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment, 1);
-				setLayout = dsm.createUnique(ctx.getDevice());
-			}
-			{
-				vku::PipelineLayoutMaker plm{};
-				plm.descriptorSetLayout(setLayout.get());
-				plm.pushConstantRange(vk::ShaderStageFlagBits::eVertex, 0, 16);
-				layout = plm.createUnique(ctx.getDevice());
-			}
 			{
 				auto vertShader = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eVertex, vert);
 				auto fragShader = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eFragment, frag);
@@ -131,7 +135,7 @@ namespace vg
 				pm.vertexAttribute(2, 0, vk::Format::eR8G8B8A8Unorm, sizeof(float) * 4);
 				pm.dynamicState(vk::DynamicState::eScissor);
 				pm.blendBegin(VK_TRUE);
-				pm.rasterizationSamples(vk::SampleCountFlagBits::e8);
+				pm.rasterizationSamples(Context::getSample());
 				pipeline = pm.createUnique(ctx.getDevice(), vk::PipelineCache(), layout.get(), renderPass);
 			}
 		}
