@@ -1,25 +1,38 @@
 #pragma once
 
 #include "../context.h"
+#include "../geometryBuffer.h"
 
 namespace vg
 {
 
 	class GeometryRenderState
 	{
-	public:
 		vk::UniquePipelineLayout layout;
 		vk::UniquePipeline pipeline;
 
-		GeometryRenderState(const Context& ctx,vk::RenderPass renderPass)
+		std::unordered_map<uint64_t, GeometryBuffer> geometries;
+	public:
+		GeometryRenderState() {}
+
+		GeometryRenderState(const Context& ctx)
 		{
-			setupPipeline(ctx,renderPass);
+			auto plm = vku::PipelineLayoutMaker();
+			//plm.pushConstantRange(vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4));
+			layout = plm.createUnique(ctx);
+		}
+
+		void addGeometry(const Context& ctx, uint64_t id, const GeometryBufferInfo& info) {
+			if (geometries.find(id) == geometries.end()) {
+				geometries[id] = GeometryBuffer(ctx, info);
+			}
+			else {
+				log_error("Geometry id is exist : ", id);
+			}
 		}
 
 		void setupPipeline(const Context& ctx,vk::RenderPass renderPass)
 		{
-			//layout = device->createPipelineLayout({});
-
 			const std::string vert =
 				"#version 450\n"
 				"layout(location=0)in vec3 position;\n"
@@ -40,41 +53,46 @@ namespace vg
 				"	color = vec4(vec3(intensity),1.0);\n"
 				"}";
 
-			std::vector<VkVertexInputBindingDescription> b = {
-				{ 0,4 * 3,VK_VERTEX_INPUT_RATE_VERTEX },
-				{ 1,4 * 3,VK_VERTEX_INPUT_RATE_VERTEX }
-			};
-			std::vector<VkVertexInputAttributeDescription> a = {
-				{ 0,0,VK_FORMAT_R32G32B32_SFLOAT,0 },
-				{ 1,1,VK_FORMAT_R32G32B32_SFLOAT,4*3 }
-			};
+			auto vertShader = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eVertex, vert);
+			auto fragShader = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eFragment, frag);
+			auto pm = vku::PipelineMaker{ ctx.getExtent().width,ctx.getExtent().height };
+			pm.shader(vk::ShaderStageFlagBits::eVertex, vertShader);
+			pm.shader(vk::ShaderStageFlagBits::eFragment, fragShader);
+			
+			auto bindings = geometries.begin()->second.getBindingInfo();
+			auto attributs = geometries.begin()->second.getAttributeInfo();
+			for (auto& b : bindings) {
+				pm.vertexBinding(b);
+			}
+			for (auto& a : attributs) {
+				pm.vertexAttribute(a);
+			}
 
-			/*
-			const vk::PipelineInfo info = {
-				*renderPass,
-				*layout,
-				{{vert,VK_SHADER_STAGE_VERTEX_BIT,vk::ShaderType::GLSL},{frag,VK_SHADER_STAGE_FRAGMENT_BIT,vk::ShaderType::GLSL}},
-				b,
-				a,
-				VK_TRUE,VK_TRUE
-			};
-
-			pipeline = device->createPipeline(info);
-			*/
+			pm.topology(vk::PrimitiveTopology::eTriangleList);
+			pm.depthTestEnable(VK_TRUE);
+			pm.depthWriteEnable(VK_TRUE);
+			pm.rasterizationSamples(Context::getSample());
+			pm.viewport({ 0.0f,static_cast<float>(ctx.getExtent().height),static_cast<float>(ctx.getExtent().width),-static_cast<float>(ctx.getExtent().height),0.0f,1.0f });
+			pipeline = pm.createUnique(ctx, vk::PipelineCache(), layout.get(), renderPass);
 		}
 
-		/*
-		template<typename Type> void draw(vk::CommandBuffer* cmd,const std::vector<DeviceHandle>& gs)
+		
+		void draw(const Context& ctx, vk::CommandBuffer cmd, vk::RenderPass renderPass)
 		{
-			cmd->bindPipeline(*pipeline);
+			if (geometries.size() > 0) {
+				if (!pipeline) {
+					setupPipeline(ctx, renderPass);
+				}
 
-			for (auto& g : gs)
-			{
-				auto geometry = static_cast<Type*>(g);
-				geometry->draw(cmd);
+				cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.get());
+
+				for (auto& g : geometries)
+				{
+					g.second.draw(cmd);
+				}
 			}
 		}
-		*/
+		
 	};
 
 }

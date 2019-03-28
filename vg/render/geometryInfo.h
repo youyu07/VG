@@ -4,34 +4,42 @@
 
 namespace vg
 {
+	enum VertexType
+	{
+		none = 0x00,
+		position = 0x01,
+		normal = 0x02,
+		texcoord = 0x04,
+		PNT = position | normal | texcoord
+	};
+
+	enum class IndexType
+	{
+		u16,
+		u32
+	};
+
 	struct GeometryBufferInfo
 	{
-		enum class IndexType
-		{
-			u16,
-			u32
-		};
+		VertexType flags;
+		IndexType indexType;
 
-		enum Flag
-		{
-			position = 0x01,
-			normal = 0x02,
-			texcoord = 0x04
-		};
+		void* vertex = nullptr;
+		void* index = nullptr;
+		uint32_t vertexSize = 0;
+		uint32_t indexSize = 0;
 
-		void vertexData(uint32_t size, void* data, Flag flag = Flag::position)
+		void vertexData(uint32_t size, void* data, VertexType flag = VertexType::position)
 		{
-			vertexData = data;
+			vertex = data;
 			vertexSize = size;
 			flags = flag;
 		}
-	private:
-		void* vertexData = nullptr;
-		void* indexData = nullptr;
-		uint32_t vertexSize = 0;
-		uint32_t indexSize = 0;
-		IndexType indexType = IndexType::u16;
-		Flag flags = 0;
-		
+
+		void indexData(uint32_t size, void* data, IndexType type = IndexType::u16) {
+			index = data;
+			indexSize = size;
+			indexType = type;
+		}
 	};
 }

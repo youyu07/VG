@@ -1,131 +1,69 @@
 #pragma once
-#include "device.h"
-#include "util.h"
+#include "context.h"
 #include "geometryInfo.h"
 
 namespace vg
 {
-
-	struct VertexInfo
-	{
-		std::vector<VkVertexInputBindingDescription> bindings;
-		std::vector<VkVertexInputAttributeDescription> attributes;
-	};
-
 	struct GeometryBuffer
 	{
-		vk::Buffer* position = nullptr;
-		vk::Buffer* normal = nullptr;
-		vk::Buffer* texcoord = nullptr;
-		vk::Buffer* indices = nullptr;
-		VkFormat positionFormat, normalFormat, texcoordFormat;
-		VkIndexType indexType = VK_INDEX_TYPE_UINT16;
+		vku::VertexBuffer vertexBuffer;
+		vku::IndexBuffer indexBuffer;
+
+		std::vector<vk::VertexInputBindingDescription> bindings;
+		std::vector<vk::VertexInputAttributeDescription> attributes;
+
+		vk::IndexType indexType = vk::IndexType::eUint16;
 		uint32_t count = 0;
 
-		void draw(vk::CommandBuffer* cmd)
-		{
-			std::vector<VkBuffer> buffers;
-			if (position) {
-				buffers.push_back(*position);
+		GeometryBuffer() {}
+
+		GeometryBuffer(const Context& ctx,const GeometryBufferInfo& info) {
+			vertexBuffer = vku::VertexBuffer(ctx, ctx.getMemoryProperties(), info.vertexSize);
+			vertexBuffer.upload(ctx, ctx.getMemoryProperties(), ctx.getCommandPool(), ctx.getGraphicsQueue(), info.vertex, info.vertexSize);
+
+			indexBuffer = vku::IndexBuffer(ctx, ctx.getMemoryProperties(), info.indexSize);
+			indexBuffer.upload(ctx, ctx.getMemoryProperties(), ctx.getCommandPool(), ctx.getGraphicsQueue(), info.index, info.indexSize);
+
+			uint32_t offset = 0;
+			if ((info.flags & VertexType::position) == VertexType::position) {
+				attributes.emplace_back(0, 0, vk::Format::eR32G32B32Sfloat, offset);
+				offset += sizeof(float) * 3;
 			}
-			if (normal) {
-				buffers.push_back(*normal);
+			if ((info.flags & VertexType::normal) == VertexType::normal) {
+				attributes.emplace_back(1, 0, vk::Format::eR32G32B32Sfloat, offset);
+				offset += sizeof(float) * 3;
 			}
-			if (texcoord) {
-				buffers.push_back(*texcoord);
+			if ((info.flags & VertexType::texcoord) == VertexType::texcoord) {
+				attributes.emplace_back(2, 0, vk::Format::eR32G32Sfloat, offset);
+				offset += sizeof(float) * 2;
 			}
 
-			const auto offset = std::vector<VkDeviceSize>(buffers.size(),0);
-			cmd->bindVertex(buffers, offset);
-			if (indices) {
-				cmd->bindIndex(*indices, indexType);
-				cmd->drawIndex(count, 1);
+			bindings.emplace_back(0, offset);
+
+			if (info.indexType == IndexType::u32) {
+				indexType = vk::IndexType::eUint32;
+				count = info.indexSize >> 2;
 			}
 			else {
-				cmd->draw(count, 1);
+				count = info.indexSize >> 1;
 			}
 		}
 
-		VertexInfo getBindingInfo()
+		void draw(vk::CommandBuffer cmd)
 		{
-			std::vector<VkVertexInputBindingDescription> b;
-			std::vector<VkVertexInputAttributeDescription> a;
-			uint32_t binding = 0;
-			if (position) {
-				b.push_back({ binding, vk::util::getFormatSize(positionFormat), VK_VERTEX_INPUT_RATE_VERTEX });
-				a.push_back({ binding,binding,positionFormat,0 });
-				binding++;
-			}
-			if (normal) {
-				b.push_back({ binding,vk::util::getFormatSize(normalFormat), VK_VERTEX_INPUT_RATE_VERTEX });
-				a.push_back({ binding,binding,normalFormat,0 });
-				binding++;
-			}
-			if (texcoord) {
-				b.push_back({ binding,vk::util::getFormatSize(texcoordFormat), VK_VERTEX_INPUT_RATE_VERTEX });
-				a.push_back({ binding,binding,texcoordFormat,0 });
-				binding++;
-			}
-
-			return { std::move(b), std::move(a) };
+			vk::DeviceSize offset = 0;
+			cmd.bindVertexBuffers(0, vertexBuffer.buffer(), offset);
+			cmd.bindIndexBuffer(indexBuffer.buffer(), 0, indexType);
+			cmd.drawIndexed(count, 1, 0, 0, 0);
 		}
 
-		static GeometryBuffer* create(vk::Device* device,const GeometryBufferInfo& geometry) {
-			auto getDeviceFormat = [](GeometryBufferInfo::Format format) {
-				switch (format)
-				{
-				case vg::GeometryBufferInfo::Format::r16:
-					return VK_FORMAT_R16_SFLOAT;
-				case vg::GeometryBufferInfo::Format::rg32:
-					return VK_FORMAT_R32G32_SFLOAT;
-				case vg::GeometryBufferInfo::Format::rgb32:
-					return VK_FORMAT_R32G32B32_SFLOAT;
-				case vg::GeometryBufferInfo::Format::rgba32:
-					return VK_FORMAT_R32G32B32A32_SFLOAT;
-				}
-				return VK_FORMAT_UNDEFINED;
-			};
-
-			auto createBuffer = [&](uint32_t size, VkBufferUsageFlags usage, const void* ptr) -> vk::Buffer * {
-				const vk::BufferInfo info = { size, usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT, vk::MemoryUsage::GPU };
-				auto buffer = device->createBuffer(info);
-				buffer->update(size, ptr);
-				return buffer;
-			};
-
-			auto result = new GeometryBuffer();
-
-			if (geometry.hasType(GeometryBufferInfo::Type::position)) {
-				auto data = geometry.getData(GeometryBufferInfo::Type::position);
-				auto format = getDeviceFormat(data.format);
-				result->position = createBuffer(data.count * vk::util::getFormatSize(format), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, data.ptr);
-				result->positionFormat = format;
-				result->count = data.count;
-			}
-
-			if (geometry.hasType(GeometryBufferInfo::Type::normal)) {
-				auto data = geometry.getData(GeometryBufferInfo::Type::normal);
-				auto format = getDeviceFormat(data.format);
-				result->normal = createBuffer(data.count * vk::util::getFormatSize(format), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, data.ptr);
-				result->normalFormat = format;
-			}
-
-			if (geometry.hasType(GeometryBufferInfo::Type::texcoord)) {
-				auto data = geometry.getData(GeometryBufferInfo::Type::texcoord);
-				auto format = getDeviceFormat(data.format);
-				result->texcoord = createBuffer(data.count * vk::util::getFormatSize(format), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, data.ptr);
-				result->texcoordFormat = format;
-			}
-
-			if (geometry.hasType(GeometryBufferInfo::Type::index)) {
-				auto data = geometry.getData(GeometryBufferInfo::Type::index);
-				auto format = getDeviceFormat(data.format);
-				result->indices = createBuffer(data.count * vk::util::getFormatSize(format), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, data.ptr);
-				if (format = VK_FORMAT_R16_SFLOAT)result->indexType = VK_INDEX_TYPE_UINT16;
-				result->count = data.count;
-			}
-
-			return result;
+		std::vector<vk::VertexInputBindingDescription> getBindingInfo()
+		{
+			return bindings;
+		}
+		std::vector<vk::VertexInputAttributeDescription> getAttributeInfo()
+		{
+			return attributes;
 		}
 	};
 

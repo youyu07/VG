@@ -5,8 +5,6 @@
 
 namespace vg
 {
-	using DeviceHandle = void*;
-
 	class Renderer
 	{
 	public:
@@ -16,7 +14,7 @@ namespace vg
 
 		void resize();
 
-		DeviceHandle createGeometry(const GeometryBufferInfo& geometry);
+		void addGeometry(uint64_t id, const GeometryBufferInfo& info);
 
 		void bindCamera(const Camera& camera);
 	private:

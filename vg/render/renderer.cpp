@@ -3,20 +3,19 @@
 #include <chrono>
 
 #include "context.h"
-#include <vku.hpp>
 #include <core/log.h>
 #include <glm/ext.hpp>
 
 #include "state/renderState.h"
+
+#include "geometryBuffer.h"
 
 namespace vg
 {
 	class RendererImpl
 	{
 		Context ctx;
-
 		vk::UniqueRenderPass renderPass;
-
 		vku::DepthStencilImage depth;
 
 		struct
@@ -34,7 +33,7 @@ namespace vg
 
 		ImguiRenderState imguiState;
 		GridRenderState gridState;
-		
+		GeometryRenderState geometryState;
 	public:
 		struct
 		{
@@ -96,6 +95,7 @@ namespace vg
 
 			imguiState = ImguiRenderState(ctx, renderPass.get());
 			gridState = GridRenderState(ctx, renderPass.get());
+			geometryState = GeometryRenderState(ctx);
 
 			acquireSemaphore = ctx.getDevice().createSemaphoreUnique({});
 			drawCompleteSemaphore = ctx.getDevice().createSemaphoreUnique({});
@@ -155,6 +155,7 @@ namespace vg
 			cmd.beginRenderPass(beginInfo,vk::SubpassContents::eInline);
 
 			gridState.draw(ctx, cmd, matrix.getProjectionViewMaxtirx());
+			geometryState.draw(ctx, cmd, renderPass.get());
 			imguiState.draw(ctx, cmd);
 
 			cmd.endRenderPass();
@@ -231,7 +232,11 @@ namespace vg
 			else {
 				return static_cast<float>(ctx.getExtent().width) / static_cast<float>(ctx.getExtent().height);
 			}
-			
+		}
+
+		void addGeometry(uint64_t id, const GeometryBufferInfo& info)
+		{
+			geometryState.addGeometry(ctx, id, info);
 		}
 	};
 
@@ -260,12 +265,8 @@ namespace vg
 		impl->matrix.view = camera.getViewMatrix();
 	}
 
-	DeviceHandle Renderer::createGeometry(const GeometryBufferInfo& geometry)
+	void Renderer::addGeometry(uint64_t id, const GeometryBufferInfo& info)
 	{
-		//auto result = GeometryBuffer::create(impl->device, geometry);
-		//impl->geometries.push_back(result);
-		//return result;
-
-		return nullptr;
+		impl->addGeometry(id, info);
 	}
 }

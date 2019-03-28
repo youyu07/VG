@@ -16,13 +16,10 @@ public:
 		camera.rotate(glm::vec3(45, -45, 0.0f));
 
 		auto geometry = vg::SimpleGeometry::createSphere();
-
-		const vg::GeometryBufferInfo info = {
-			{vg::GeometryBufferInfo::Format::rgb32, static_cast<uint32_t>(geometry.position.size()), geometry.position.data()},
-			{vg::GeometryBufferInfo::Format::rgb32, static_cast<uint32_t>(geometry.normal.size()), geometry.normal.data()},
-			{vg::GeometryBufferInfo::Format::r16, static_cast<uint32_t>(geometry.indices.size()), geometry.indices.data()}
-		};
-		renderer.createGeometry(info);
+		auto info = vg::GeometryBufferInfo();
+		info.vertexData(geometry.vertex.size() * sizeof(vg::SimpleGeometry::Vertex), geometry.vertex.data(),vg::VertexType::PNT);
+		info.indexData(geometry.indices.size() * sizeof(uint16_t), geometry.indices.data());
+		renderer.addGeometry(0, info);
 	}
 
 	virtual void update() override

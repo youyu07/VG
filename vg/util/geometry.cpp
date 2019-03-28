@@ -17,9 +17,7 @@ namespace vg
 		float thetaLength = PI;
 		
 		// buffers
-		std::vector<glm::vec3> position;
-		std::vector<glm::vec3> normal;
-		std::vector<glm::vec2> texcoord;
+		std::vector<Vertex> vertex;
 		std::vector<uint16_t> indices;
 
 		// generate vertices, normals and uvs
@@ -39,10 +37,7 @@ namespace vg
 				float y = radius * std::cos(v * thetaLength);
 				float z = radius * std::sin(u * phiLength) * std::sin(v * thetaLength);
 				glm::vec3 p(x, y, z);
-				
-				position.push_back(p);
-				normal.push_back(glm::normalize(p));
-				texcoord.push_back({ u,1 - v });
+				vertex.emplace_back(p, glm::normalize(p),glm::vec2(u, 1 - v));
 				verticesRow.push_back(index++);
 			}
 			grid.push_back(verticesRow);
@@ -70,6 +65,6 @@ namespace vg
 			}
 		}
 
-		return { std::move(position),std::move(normal),std::move(texcoord),std::move(indices) };
+		return { std::move(vertex), std::move(indices) };
 	}
 }

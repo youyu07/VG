@@ -21,6 +21,12 @@ namespace vg
 		memoryProperties = physicalDevice.getMemoryProperties();
 
 		{
+			auto prop = physicalDevice.getProperties();
+			log_info("Use device : ", prop.deviceName);
+			log_info("Max memory allocation count : ", prop.limits.maxMemoryAllocationCount);
+		}
+
+		{
 			auto queueProps = physicalDevice.getQueueFamilyProperties();
 			vk::QueueFlags search = vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute;
 			for (uint32_t qi = 0; qi != queueProps.size(); ++qi) {
