@@ -148,6 +148,13 @@ public:
 		}
 	}
 
+	virtual void windowEvent(const WindowEvent& event) override
+	{
+		if (event.type == WindowEvent::Type::Restored) {
+			renderer.resize();
+		}
+	}
+
 	virtual void draw() override
 	{
 		renderer.draw();

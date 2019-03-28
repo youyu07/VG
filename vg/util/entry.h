@@ -19,9 +19,6 @@ namespace vg
 #endif
 	};
 
-	
-
-
     class __declspec(dllexport) Entry
     {
     public:
@@ -39,6 +36,17 @@ namespace vg
 				Move
 			}type;
 			float x, y;
+		};
+
+		struct WindowEvent
+		{
+			enum class Type
+			{
+				Minimized,
+				Maximized,
+				Restored
+			}type;
+			int width, height;
 		};
 
 		virtual void init() = 0;
@@ -64,6 +72,7 @@ namespace vg
 		}
 
 		virtual void mouseEvent(const MouseEvent& event) {}
+		virtual void windowEvent(const WindowEvent& event) {}
     private:
 		WindowInfo windowInfo;
     };

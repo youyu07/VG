@@ -79,20 +79,23 @@ namespace vg
 		createSwapchain();
 	}
 
-	void Context::createSwapchain()
+	bool Context::createSwapchain()
 	{
 		if (physicalDevice.getSurfaceSupportKHR(graphicsQueueFamilyIndex, surface.get()) != VK_TRUE) {
 			log_error("graphics queue not support present\n");
-			return;
+			return false;
 		}
 
 		auto formats = physicalDevice.getSurfaceFormatsKHR(surface.get());
 
 		auto capabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface.get());
-		vk::SwapchainCreateInfoKHR info;
+		extent = capabilities.currentExtent;
+		if (extent.width == 0 || extent.height == 0) {
+			return false;
+		}
 
+		vk::SwapchainCreateInfoKHR info;
 		info.imageExtent = capabilities.currentExtent;
-		
 		info.preTransform = capabilities.currentTransform;
 		info.surface = surface.get();
 		info.imageUsage = vk::ImageUsageFlagBits::eColorAttachment;
@@ -118,7 +121,7 @@ namespace vg
 			swapchainImageViews.emplace_back(device->createImageViewUnique(viewInfo));
 		}
 
-		extent = info.imageExtent;
+		return true;
 	}
 
 

@@ -36,7 +36,7 @@ namespace vg
 
 		Context(const void* windowHandle);
 
-		void createSwapchain();
+		bool createSwapchain();
 
 		vku::ShaderModule compileGLSLToSpv(vk::ShaderStageFlagBits stage,const std::string& src) const;
 

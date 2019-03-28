@@ -6,54 +6,32 @@ namespace vg
 {
 	struct GeometryBufferInfo
 	{
-		enum class Format
+		enum class IndexType
 		{
-			undefined,
-			r16,
-			rg32,
-			rgb32,
-			rgba32
+			u16,
+			u32
 		};
 
-		enum class Type
+		enum Flag
 		{
-			position,
-			normal,
-			texcoord,
-			index
+			position = 0x01,
+			normal = 0x02,
+			texcoord = 0x04
 		};
 
-		struct Data
+		void vertexData(uint32_t size, void* data, Flag flag = Flag::position)
 		{
-			Format format = Format::undefined;
-			uint32_t count = 0;
-			void* ptr = nullptr;
-		};
-
-		GeometryBufferInfo(const Data& position)
-		{
-			data[Type::position] = position;
-		}
-
-		GeometryBufferInfo(const Data& position,const Data& index) : GeometryBufferInfo(position)
-		{
-			data[Type::index] = index;
-		}
-
-		GeometryBufferInfo(const Data& position, const Data& normal, const Data& index) : GeometryBufferInfo(position,index)
-		{
-			data[Type::normal] = normal;
-		}
-
-		const Data& getData(Type type) const {
-			return data.at(type);
-		}
-
-		bool hasType(Type type) const
-		{
-			return data.find(type) != data.end();
+			vertexData = data;
+			vertexSize = size;
+			flags = flag;
 		}
 	private:
-		std::unordered_map<Type, Data> data;
+		void* vertexData = nullptr;
+		void* indexData = nullptr;
+		uint32_t vertexSize = 0;
+		uint32_t indexSize = 0;
+		IndexType indexType = IndexType::u16;
+		Flag flags = 0;
+		
 	};
 }

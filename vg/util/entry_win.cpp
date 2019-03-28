@@ -44,6 +44,19 @@ namespace vg
 		case WM_MOUSEMOVE:
 			entry->mouseEvent({ Entry::MouseEvent::Type::Move,(float)LOWORD(lParam), (float)HIWORD(lParam) });
 			break;
+
+		case WM_SIZE:
+			if (entry) {
+				int width = LOWORD(lParam);
+				int height = HIWORD(lParam);
+				switch (wParam)
+				{
+				case SIZE_MINIMIZED:entry->windowEvent({ Entry::WindowEvent::Type::Minimized,width,height }); break;
+				case SIZE_MAXIMIZED:entry->windowEvent({ Entry::WindowEvent::Type::Maximized,width,height }); break;
+				case SIZE_RESTORED:entry->windowEvent({ Entry::WindowEvent::Type::Restored,width,height }); break;
+				}
+			}
+			break;
 		}
 
 		return DefWindowProc(hwnd, message, wParam, lParam);

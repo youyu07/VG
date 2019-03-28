@@ -119,14 +119,16 @@ namespace vg
 			}
 		}
 
-		void resize() {
-			if (!prepared) {
+		void resize(bool force = false) {
+			if (!force && !prepared) {
 				return;
 			}
 			prepared = false;
 			ctx.getDevice().waitIdle();
-			ctx.createSwapchain();
 
+			if (!ctx.createSwapchain()) {
+				return;
+			}
 			frameBuffers.clear();
 			setupFrameBuffer();
 			imguiState.resize(ctx, renderPass.get());
@@ -223,7 +225,13 @@ namespace vg
 
 		float getAspect()
 		{
-			return static_cast<float>(ctx.getExtent().width) / static_cast<float>(ctx.getExtent().height);
+			if (ctx.getExtent().height == 0) {
+				return 1.0f;
+			}
+			else {
+				return static_cast<float>(ctx.getExtent().width) / static_cast<float>(ctx.getExtent().height);
+			}
+			
 		}
 	};
 
@@ -243,7 +251,7 @@ namespace vg
 
 	void Renderer::resize()
 	{
-
+		impl->resize(true);
 	}
 
 	void Renderer::bindCamera(const Camera& camera)
