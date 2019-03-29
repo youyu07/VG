@@ -12,6 +12,48 @@
 
 namespace vg
 {
+	struct CameraMatrix
+	{
+		struct
+		{
+			glm::mat4 projection;
+			glm::mat4 view;
+		}data;
+
+		vku::HostUniformBuffer buffer;
+		vk::UniqueDescriptorSetLayout setLayout;
+		vk::UniqueDescriptorSet set;
+
+		CameraMatrix() {}
+
+		CameraMatrix(const Context& ctx) {
+			buffer = vku::HostUniformBuffer(ctx, ctx.getMemoryProperties(), sizeof(data));
+			vku::DescriptorSetLayoutMaker dlm;
+			dlm.buffer(0, vk::DescriptorType::eUniformBufferDynamic, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 1);
+			setLayout = dlm.createUnique(ctx);
+
+			vku::DescriptorSetMaker dm;
+			dm.layout(setLayout.get());
+			set = std::move(dm.createUnique(ctx, ctx.getDescriptorPool()).at(0));
+
+			vku::DescriptorSetUpdater updater;
+			updater.beginDescriptorSet(set.get());
+			updater.beginBuffers(0, 0, vk::DescriptorType::eUniformBufferDynamic);
+			updater.buffer(buffer.buffer(), 0, sizeof(data));
+			updater.update(ctx);
+		}
+
+		void update(glm::mat4 p, glm::mat4 v) {
+			data.projection = p;
+			data.view = v;
+		}
+
+		void update(const Context& ctx) {
+			buffer.updateLocal(ctx, data);
+		}
+	};
+
+
 	class RendererImpl
 	{
 		Context ctx;
@@ -35,15 +77,7 @@ namespace vg
 		GridRenderState gridState;
 		GeometryRenderState geometryState;
 	public:
-		struct
-		{
-			glm::mat4 projection;
-			glm::mat4 view;
-
-			glm::mat4 getProjectionViewMaxtirx() {
-				return projection * view;
-			}
-		}matrix;
+		CameraMatrix matrix;
 
 		bool prepared = false;
 	public:
@@ -93,9 +127,11 @@ namespace vg
 
 			drawCommandBuffers = ctx.getDevice().allocateCommandBuffersUnique({ ctx.getCommandPool(),vk::CommandBufferLevel::ePrimary,ctx.getSwapchainImageCount() });
 
+			matrix = CameraMatrix(ctx);
+
 			imguiState = ImguiRenderState(ctx, renderPass.get());
-			gridState = GridRenderState(ctx, renderPass.get());
-			geometryState = GeometryRenderState(ctx);
+			gridState = GridRenderState(ctx, renderPass.get(),matrix.setLayout.get());
+			geometryState = GeometryRenderState(ctx, matrix.setLayout.get());
 
 			acquireSemaphore = ctx.getDevice().createSemaphoreUnique({});
 			drawCompleteSemaphore = ctx.getDevice().createSemaphoreUnique({});
@@ -129,16 +165,16 @@ namespace vg
 			if (!ctx.createSwapchain()) {
 				return;
 			}
-			frameBuffers.clear();
+			frameBuffers.swap(std::vector<vk::UniqueFramebuffer>());
 			setupFrameBuffer();
-			imguiState.resize(ctx, renderPass.get());
-			gridState.resize(ctx, renderPass.get());
 
 			prepared = true;
 		}
 
 		void buildCommandBuffer(uint32_t index)
 		{
+			matrix.update(ctx);
+
 			auto& cmd = drawCommandBuffers.at(index).get();
 
 			cmd.begin(vk::CommandBufferBeginInfo());
@@ -154,12 +190,22 @@ namespace vg
 			beginInfo.pClearValues = clearColours.data();
 			cmd.beginRenderPass(beginInfo,vk::SubpassContents::eInline);
 
-			gridState.draw(ctx, cmd, matrix.getProjectionViewMaxtirx());
-			geometryState.draw(ctx, cmd, renderPass.get());
+			vk::Viewport viewport = {0.0f,static_cast<float>(ctx.getExtent().height),static_cast<float>(ctx.getExtent().width),-static_cast<float>(ctx.getExtent().height),0.0f,1.0f };
+			cmd.setViewport(0, viewport);
+			vk::Rect2D scissor = { {},ctx.getExtent() };
+			cmd.setScissor(0, scissor);
+
+			gridState.draw(ctx, cmd, matrix.set.get());
+			geometryState.draw(ctx, cmd, renderPass.get(), matrix.set.get());
+
+			viewport = { 0.0f,0.0f,static_cast<float>(ctx.getExtent().width),static_cast<float>(ctx.getExtent().height),0.0f,1.0f };
+			cmd.setViewport(0, viewport);
 			imguiState.draw(ctx, cmd);
 
 			cmd.endRenderPass();
 			cmd.end();
+
+			
 		}
 
 		void draw()
@@ -261,8 +307,7 @@ namespace vg
 
 	void Renderer::bindCamera(const Camera& camera)
 	{
-		impl->matrix.projection = camera.getProjectionMatrix(impl->getAspect());
-		impl->matrix.view = camera.getViewMatrix();
+		impl->matrix.update(camera.getProjectionMatrix(impl->getAspect()), camera.getViewMatrix());
 	}
 
 	void Renderer::addGeometry(uint64_t id, const GeometryBufferInfo& info)

@@ -15,10 +15,10 @@ namespace vg
 	public:
 		GeometryRenderState() {}
 
-		GeometryRenderState(const Context& ctx)
+		GeometryRenderState(const Context& ctx, vk::DescriptorSetLayout cameraSetLayout)
 		{
 			auto plm = vku::PipelineLayoutMaker();
-			//plm.pushConstantRange(vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4));
+			plm.descriptorSetLayout(cameraSetLayout);
 			layout = plm.createUnique(ctx);
 		}
 
@@ -37,9 +37,15 @@ namespace vg
 				"#version 450\n"
 				"layout(location=0)in vec3 position;\n"
 				"layout(location=1)in vec3 normal;\n"
+
+				"layout(set=0,binding=0) uniform CameraMatrix {\n"
+				"	mat4 projection;\n"
+				"	mat4 view;\n"
+				"} matrix;\n"
+
 				"layout(location=0)out vec3 v_normal;\n"
 				"void main(){\n"
-				"	gl_Position = vec4(position,1.0);\n"
+				"	gl_Position = matrix.projection * matrix.view * vec4(position,1.0);\n"
 				"	v_normal = normal;\n"
 				"}";
 
@@ -72,12 +78,13 @@ namespace vg
 			pm.depthTestEnable(VK_TRUE);
 			pm.depthWriteEnable(VK_TRUE);
 			pm.rasterizationSamples(Context::getSample());
-			pm.viewport({ 0.0f,static_cast<float>(ctx.getExtent().height),static_cast<float>(ctx.getExtent().width),-static_cast<float>(ctx.getExtent().height),0.0f,1.0f });
+			pm.dynamicState(vk::DynamicState::eViewport);
+			pm.dynamicState(vk::DynamicState::eScissor);
 			pipeline = pm.createUnique(ctx, vk::PipelineCache(), layout.get(), renderPass);
 		}
 
 		
-		void draw(const Context& ctx, vk::CommandBuffer cmd, vk::RenderPass renderPass)
+		void draw(const Context& ctx, vk::CommandBuffer cmd, vk::RenderPass renderPass, vk::DescriptorSet cameraSet)
 		{
 			if (geometries.size() > 0) {
 				if (!pipeline) {
@@ -85,6 +92,9 @@ namespace vg
 				}
 
 				cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.get());
+				uint32_t setOffset = { 0 };
+				cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout.get(), 0, cameraSet, setOffset);
+
 
 				for (auto& g : geometries)
 				{

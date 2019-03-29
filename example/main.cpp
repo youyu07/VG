@@ -17,8 +17,8 @@ public:
 
 		auto geometry = vg::SimpleGeometry::createSphere();
 		auto info = vg::GeometryBufferInfo();
-		info.vertexData(geometry.vertex.size() * sizeof(vg::SimpleGeometry::Vertex), geometry.vertex.data(),vg::VertexType::PNT);
-		info.indexData(geometry.indices.size() * sizeof(uint16_t), geometry.indices.data());
+		info.vertexData(uint32_t(geometry.vertex.size() * sizeof(vg::SimpleGeometry::Vertex)), geometry.vertex.data(),vg::VertexType::PNT);
+		info.indexData(uint32_t(geometry.indices.size() * sizeof(uint16_t)), geometry.indices.data());
 		renderer.addGeometry(0, info);
 	}
 

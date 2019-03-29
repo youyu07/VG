@@ -15,15 +15,10 @@ namespace vg
 	public:
 		GridRenderState() {}
 
-		void resize(const Context& ctx, vk::RenderPass renderPass)
-		{
-			setupPipeline(ctx, renderPass);
-		}
-
-		GridRenderState(const Context& ctx, vk::RenderPass renderPass)
+		GridRenderState(const Context& ctx, vk::RenderPass renderPass,vk::DescriptorSetLayout cameraSetLayout)
 		{
 			auto plm = vku::PipelineLayoutMaker();
-			plm.pushConstantRange(vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4));
+			plm.descriptorSetLayout(cameraSetLayout);
 			layout = plm.createUnique(ctx);
 
 			setupPipeline(ctx, renderPass);
@@ -62,9 +57,10 @@ namespace vg
 				"#version 450 core\n"
 				"layout(location = 0) in vec2 aPos;\n"
 
-				"layout(push_constant) uniform uPushConstant {\n"
-				"	mat4 matrix;\n"
-				"} pc;\n"
+				"layout(set=0,binding=0) uniform CameraMatrix {\n"
+				"	mat4 projection;\n"
+				"	mat4 view;\n"
+				"} matrix;\n"
 
 				"out gl_PerVertex{\n"
 				"	vec4 gl_Position;\n"
@@ -72,7 +68,7 @@ namespace vg
 
 				"void main()\n"
 				"{\n"
-				"	gl_Position = pc.matrix * vec4(aPos.x, 0.0, aPos.y, 1.0);\n"
+				"	gl_Position = matrix.projection * matrix.view * vec4(aPos.x, 0.0, aPos.y, 1.0);\n"
 				"}\n";
 
 			const std::string frag =
@@ -96,18 +92,20 @@ namespace vg
 			pm.depthWriteEnable(VK_TRUE);
 			pm.lineWidth(1.0f);
 			pm.dynamicState(vk::DynamicState::eLineWidth);
+			pm.dynamicState(vk::DynamicState::eViewport);
+			pm.dynamicState(vk::DynamicState::eScissor);
 			pm.rasterizationSamples(Context::getSample());
-			pm.viewport({ 0.0f,static_cast<float>(ctx.getExtent().height),static_cast<float>(ctx.getExtent().width),-static_cast<float>(ctx.getExtent().height),0.0f,1.0f });
 			pipeline = pm.createUnique(ctx,vk::PipelineCache(),layout.get(),renderPass);
 		}
 
-		void draw(const Context& ctx, vk::CommandBuffer cmd, glm::mat4 transform)
+		void draw(const Context& ctx, vk::CommandBuffer cmd, vk::DescriptorSet cameraSet)
 		{
 			vk::DeviceSize offset = { 0 };
 
 			cmd.bindVertexBuffers(0, vertexBuffer.buffer(), offset);
 			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.get());
-			cmd.pushConstants(layout.get(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &transform);
+			uint32_t setOffset = { 0 };
+			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout.get(), 0, cameraSet, setOffset);
 
 			cmd.setLineWidth(3.0f);
 			cmd.draw(mainLineCount, 1, 0, 0);

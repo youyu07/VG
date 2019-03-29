@@ -1184,7 +1184,7 @@ public:
   IndexBuffer() {
   }
 
-  IndexBuffer(const vk::Device &device, const vk::PhysicalDeviceMemoryProperties &memprops, vk::DeviceSize size) : GenericBuffer(device, memprops, vk::BufferUsageFlagBits::eIndexBuffer, size, vk::MemoryPropertyFlagBits::eDeviceLocal) {
+  IndexBuffer(const vk::Device &device, const vk::PhysicalDeviceMemoryProperties &memprops, vk::DeviceSize size) : GenericBuffer(device, memprops, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst, size, vk::MemoryPropertyFlagBits::eDeviceLocal) {
   }
 };
 
@@ -1209,6 +1209,17 @@ public:
   /// Device local uniform buffer.
   UniformBuffer(const vk::Device &device, const vk::PhysicalDeviceMemoryProperties &memprops, size_t size) : GenericBuffer(device, memprops, vk::BufferUsageFlagBits::eUniformBuffer|vk::BufferUsageFlagBits::eTransferDst, (vk::DeviceSize)size, vk::MemoryPropertyFlagBits::eDeviceLocal) {
   }
+};
+
+/// This class is a specialisation of GenericBuffer for uniform buffers.
+class HostUniformBuffer : public GenericBuffer {
+public:
+	HostUniformBuffer() {
+	}
+
+	/// Device local uniform buffer.
+	HostUniformBuffer(const vk::Device &device, const vk::PhysicalDeviceMemoryProperties &memprops, size_t size) : GenericBuffer(device, memprops, vk::BufferUsageFlagBits::eUniformBuffer, (vk::DeviceSize)size, vk::MemoryPropertyFlagBits::eHostVisible) {
+	}
 };
 
 /// Convenience class for updating descriptor sets (uniforms)

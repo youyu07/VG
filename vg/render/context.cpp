@@ -115,12 +115,11 @@ namespace vg
 		info.imageArrayLayers = 1;
 		info.clipped = VK_TRUE;
 		info.oldSwapchain = swapchain.get();
-
-		swapchain = device->createSwapchainKHRUnique(info);
+		swapchain = std::move(device->createSwapchainKHRUnique(info));
 
 		swapchainImages = device->getSwapchainImagesKHR(swapchain.get());
 
-		swapchainImageViews.clear();
+		swapchainImageViews.swap(std::vector<vk::UniqueImageView>());
 		for (auto& img : swapchainImages)
 		{
 			auto viewInfo = vk::ImageViewCreateInfo({}, img, vk::ImageViewType::e2D, info.imageFormat, {}, { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 });

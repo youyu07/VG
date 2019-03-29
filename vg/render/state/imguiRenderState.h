@@ -21,11 +21,6 @@ namespace vg
 	public:
 		ImguiRenderState() {}
 
-		void resize(const Context& ctx, vk::RenderPass renderPass)
-		{
-			setupPipeline(ctx, renderPass);
-		}
-
 		ImguiRenderState(const Context& ctx, vk::RenderPass renderPass)
 		{
 			{
@@ -134,6 +129,7 @@ namespace vg
 				pm.vertexAttribute(1, 0, vk::Format::eR32G32Sfloat, sizeof(float) * 2);
 				pm.vertexAttribute(2, 0, vk::Format::eR8G8B8A8Unorm, sizeof(float) * 4);
 				pm.dynamicState(vk::DynamicState::eScissor);
+				pm.dynamicState(vk::DynamicState::eViewport);
 				pm.blendBegin(VK_TRUE);
 				pm.rasterizationSamples(Context::getSample());
 				pipeline = pm.createUnique(ctx.getDevice(), vk::PipelineCache(), layout.get(), renderPass);
