@@ -7,6 +7,7 @@ set(VG_SOURCE
 	imgui/imgui_draw.cpp
 	imgui/imgui_widgets.cpp
 	imgui/imgui_win32.cpp
+	render/vk/vkt.cpp
 	render/context.cpp
 	render/renderer.cpp
 	util/entry.cpp
