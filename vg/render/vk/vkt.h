@@ -20,16 +20,16 @@ namespace vg::vk
 {
 	class Instance_T;
 	using Instance = std::unique_ptr<Instance_T>;
+	class DebugCallback_T;
+	using DebugCallback = std::unique_ptr<DebugCallback_T>;
 	class Surface_T;
 	using Surface = std::unique_ptr<Surface_T>;
 	class Device_T;
 	using Device = std::unique_ptr<Device_T>;
-	class CommandPool_T;
-	using CommandPool = std::unique_ptr<CommandPool_T>;
+	class Queue_T;
+	using Queue = std::unique_ptr<Queue_T>;
 	class DescriptorPool_T;
 	using DescriptorPool = std::unique_ptr<DescriptorPool_T>;
-	class CommandBuffer_T;
-	using CommandBuffer = std::unique_ptr<CommandBuffer_T>;
 	class Image_T;
 	using Image = std::unique_ptr<Image_T>;
 	class Swapchain_T;
@@ -50,12 +50,14 @@ namespace vg::vk
 	using Fence = std::unique_ptr<Fence_T>;
 	class Semaphore_T;
 	using Semaphore = std::unique_ptr<Semaphore_T>;
-	class Queue_T;
-	using Queue = std::unique_ptr<Queue_T>;
 	class Buffer_T;
 	using Buffer = std::unique_ptr<Buffer_T>;
 	class Sampler_T;
 	using Sampler = std::unique_ptr<Sampler_T>;
+	class CommandPool_T;
+	using CommandPool = std::unique_ptr<CommandPool_T>;
+	class CommandBuffer_T;
+	using CommandBuffer = std::unique_ptr<CommandBuffer_T>;
 
 #define VK_CHECK_RESULT(result) assert(VK_SUCCESS == result);
 
@@ -90,45 +92,82 @@ namespace vg::vk
 		T* m_ptr;
 	};
 
-	class Instance_T
+	template<typename Type> class Handle_T
 	{
 	public:
-		Instance_T(VkInstance instance) : instance_(instance) {}
-		~Instance_T() { vkDestroyInstance(instance_, nullptr); }
-		operator VkInstance() const { return instance_; }
+		Handle_T() {}
+		Handle_T(Type handle) :handle_(handle) {}
+		inline operator Type() const { return handle_; }
+		inline Type get() const { return handle_; }
+	protected:
+		Type handle_ = VK_NULL_HANDLE;
+	};
+
+	class Instance_T : public Handle_T<VkInstance>
+	{
+	public:
+		Instance_T(VkInstance instance) : Handle_T(instance) {}
+		~Instance_T() { vkDestroyInstance(handle_, nullptr); }
 
 		std::vector<VkPhysicalDevice> getPhysicalDevice()
 		{
 			uint32_t count = 0;
-			vkEnumeratePhysicalDevices(instance_, &count, nullptr);
+			vkEnumeratePhysicalDevices(handle_, &count, nullptr);
 			std::vector<VkPhysicalDevice> physicalDevices(count);
-			vkEnumeratePhysicalDevices(instance_, &count, physicalDevices.data());
+			vkEnumeratePhysicalDevices(handle_, &count, physicalDevices.data());
 			return std::move(physicalDevices);
 		}
 
-		Surface createSurface(const void* windowHandle);
-	private:
-		VkInstance instance_;
+		Surface createSurface(const void* windowHandle) const;
+
+		DebugCallback createDebugCallBack() const { return std::make_unique<DebugCallback_T>(this); }
+
+		PFN_vkVoidFunction getProcAddr(const char* name) const {
+			return vkGetInstanceProcAddr(handle_, name);
+		}
 	};
 
-	class Surface_T
+	class DebugCallback_T : public Handle_T<VkDebugReportCallbackEXT>
 	{
 	public:
-		Surface_T(const Instance_T* instance, VkSurfaceKHR surface) : instance_(instance), surface_(surface) {}
-		~Surface_T() { vkDestroySurfaceKHR(*instance_, surface_, nullptr); }
-		operator VkSurfaceKHR() const { return surface_; }
+		DebugCallback_T(const Instance_T* instance) : instance_(instance) {
+			VkDebugReportCallbackCreateInfoEXT info = { VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT };
+			info.flags = VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT | VK_DEBUG_REPORT_ERROR_BIT_EXT;
+			info.pfnCallback = &debugCallback;
+			auto creator = (PFN_vkCreateDebugReportCallbackEXT)instance_->getProcAddr("vkCreateDebugReportCallbackEXT");
+			creator(instance_->get(), &info,nullptr, &handle_);
+		}
+
+		~DebugCallback_T() {
+			auto destroy = (PFN_vkDestroyDebugReportCallbackEXT)instance_->getProcAddr("vkDestroyDebugReportCallbackEXT");
+			destroy(instance_->get(), handle_, nullptr);
+		}
 	private:
+		static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
+			VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType,
+			uint64_t object, size_t location, int32_t messageCode,
+			const char* pLayerPrefix, const char* pMessage, void* pUserData) {
+			log_error(pMessage);
+			return VK_FALSE;
+		}
 		const Instance_T* instance_;
-		VkSurfaceKHR surface_;
 	};
 
-	class Device_T
+	class Surface_T : public Handle_T<VkSurfaceKHR>
+	{
+	public:
+		Surface_T(const Instance_T* instance, VkSurfaceKHR surface) : instance_(instance), Handle_T(surface) {}
+		~Surface_T() { vkDestroySurfaceKHR(*instance_, handle_, nullptr); }
+	private:
+		const Instance_T* instance_;
+	};
+
+	class Device_T : public Handle_T<VkDevice>
 	{
 	public:
 		Device_T(VkPhysicalDevice physicalDevice, VkDevice device);
-		~Device_T() { vkDestroyDevice(device_, nullptr); }
+		~Device_T() { vkDestroyDevice(handle_, nullptr); }
 		VmaAllocator allocator() const { return allocator_; }
-		operator VkDevice() const { return device_; }
 		operator VkPhysicalDevice() const { return physicalDevice_; }
 
 		std::vector<VkSurfaceFormatKHR> getSurfaceFormat(VkSurfaceKHR surface) const
@@ -179,23 +218,23 @@ namespace vg::vk
 
 		Queue getQueue(uint32_t familyIndex,uint32_t index = 0) {
 			VkQueue queue;
-			vkGetDeviceQueue(device_, familyIndex, index, &queue);
+			vkGetDeviceQueue(handle_, familyIndex, index, &queue);
 			return std::make_unique<Queue_T>(queue);
 		}
 
 		void waitForFences(ArrayProxy<const VkFence> fences,VkBool32 reset = VK_TRUE) {
-			vkWaitForFences(device_, fences.size(), fences.data(), VK_TRUE, std::numeric_limits<uint64_t>::max());
+			vkWaitForFences(handle_, fences.size(), fences.data(), VK_TRUE, std::numeric_limits<uint64_t>::max());
 			if (reset) {
-				vkResetFences(device_, fences.size(), fences.data());
+				vkResetFences(handle_, fences.size(), fences.data());
 			}
 		}
 
 		void waitIdle() {
-			VK_CHECK_RESULT(vkDeviceWaitIdle(device_));
+			VK_CHECK_RESULT(vkDeviceWaitIdle(handle_));
 		}
 
 		VkResult acquireNextImage(VkSwapchainKHR swapchain,uint32_t* index,VkSemaphore semaphore,VkFence fence = VkFence()) {
-			return vkAcquireNextImageKHR(device_, swapchain, std::numeric_limits<uint64_t>::max(), semaphore, fence, index);
+			return vkAcquireNextImageKHR(handle_, swapchain, std::numeric_limits<uint64_t>::max(), semaphore, fence, index);
 		}
 
 		Image createTexture2D(uint32_t width, uint32_t height, uint32_t mipLevels = 1, VkFormat format = VK_FORMAT_R8G8B8A8_UNORM);
@@ -207,45 +246,37 @@ namespace vg::vk
 		Buffer createIndexBuffer(VkDeviceSize size, VkBool32 dynamic = false);
 	private:
 		VkPhysicalDevice physicalDevice_;
-		VkDevice device_;
 		VmaAllocator allocator_;
 	};
 
-	class RenderPass_T
+	class Queue_T : public Handle_T<VkQueue>
+	{
+	public:
+		Queue_T(VkQueue queue) : Handle_T(queue) {}
+
+		void submit(ArrayProxy<const VkCommandBuffer> cmds, ArrayProxy<const VkSemaphore> wait = nullptr, ArrayProxy<const VkSemaphore> signal = nullptr, VkFence fence = VkFence(), VkPipelineStageFlags waitStage = 0);
+
+		void submit(CommandBuffer& cmd);
+
+		VkResult present(ArrayProxy<const VkSwapchainKHR> swapchain, uint32_t* imageIndex, ArrayProxy<const VkSemaphore> wait);
+
+		void waitIdle() { vkQueueWaitIdle(handle_); }
+
+		Queue clone() const { return std::make_unique<Queue_T>(handle_); }
+	};
+
+	class RenderPass_T : public Handle_T<VkRenderPass>
 	{
 	public:
 		RenderPass_T(const Device_T* device, const VkRenderPassCreateInfo& info) : device_(device){
-			VK_CHECK_RESULT(vkCreateRenderPass(*device_, &info, nullptr, &renderPass_));
+			VK_CHECK_RESULT(vkCreateRenderPass(*device_, &info, nullptr, &handle_));
 		}
-		~RenderPass_T() { vkDestroyRenderPass(*device_,renderPass_,nullptr); }
-		operator VkRenderPass() const { return renderPass_; }
+		~RenderPass_T() { vkDestroyRenderPass(*device_,handle_,nullptr); }
 	private:
 		const Device_T* device_;
-		VkRenderPass renderPass_;
 	};
 
-	class CommandPool_T
-	{
-	public:
-		CommandPool_T(const Device_T* device, uint32_t familyIndex) : device_(device), familyIndex_(familyIndex) {
-			VkCommandPoolCreateInfo info = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
-			info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-			info.queueFamilyIndex = familyIndex_;
-			VK_CHECK_RESULT(vkCreateCommandPool(*device_, &info, nullptr, &commandPool_));
-		}
-		~CommandPool_T() { vkDestroyCommandPool(*device_, commandPool_, nullptr); }
-		operator VkCommandPool() const { return commandPool_; }
-
-		CommandBuffer createCommandBuffer() {
-			return std::make_unique<CommandBuffer_T>(device_, this);
-		}
-	private:
-		const Device_T* device_;
-		VkCommandPool commandPool_;
-		uint32_t familyIndex_;
-	};
-
-	class DescriptorPool_T
+	class DescriptorPool_T : public Handle_T<VkDescriptorPool>
 	{
 	public:
 		DescriptorPool_T(const Device_T* device) : device_(device) {
@@ -261,189 +292,92 @@ namespace vg::vk
 			info.poolSizeCount = static_cast<uint32_t>(size.size());
 			info.pPoolSizes = size.data();
 			info.maxSets = info.poolSizeCount * per;
-			VK_CHECK_RESULT(vkCreateDescriptorPool(*device_, &info, nullptr, &pool_));
+			VK_CHECK_RESULT(vkCreateDescriptorPool(*device_, &info, nullptr, &handle_));
 		}
-		~DescriptorPool_T() { vkDestroyDescriptorPool(*device_, pool_, nullptr); }
-		operator VkDescriptorPool() const { return pool_; }
+		~DescriptorPool_T() { vkDestroyDescriptorPool(*device_, handle_, nullptr); }
 
 		DescriptorSet createDescriptorSet(ArrayProxy<const VkDescriptorSetLayout> layouts) {
 			return std::make_unique<DescriptorSet_T>(device_, this, layouts);
 		}
 	private:
 		const Device_T* device_;
-		VkDescriptorPool pool_;
 	};
 
-	class CommandBuffer_T
-	{
-	public:
-		CommandBuffer_T(const Device_T* device, const CommandPool_T* pool) : device_(device), pool_(pool) {
-			VkCommandBufferAllocateInfo info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
-			info.commandBufferCount = 1;
-			info.commandPool = *pool_;
-			info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-			VK_CHECK_RESULT(vkAllocateCommandBuffers(*device_, &info, &commandBuffer_));
-		}
-		~CommandBuffer_T() { vkFreeCommandBuffers(*device_, *pool_, 1, &commandBuffer_); }
-		operator VkCommandBuffer() const { return commandBuffer_; }
-
-		void pipelineBarrier(VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask, VkDependencyFlags dependencyFlags,
-			ArrayProxy<const VkMemoryBarrier> memoryBarriers,
-			ArrayProxy<const VkBufferMemoryBarrier> bufferMemoryBarriers,
-			ArrayProxy<const VkImageMemoryBarrier> imageMemoryBarriers)
-		{
-			vkCmdPipelineBarrier(commandBuffer_, srcStageMask, dstStageMask, dependencyFlags,
-				memoryBarriers.size(), memoryBarriers.data(),
-				bufferMemoryBarriers.size(), bufferMemoryBarriers.data(),
-				imageMemoryBarriers.size(), imageMemoryBarriers.data());
-		}
-
-		void begin(VkCommandBufferUsageFlags usage = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) {
-			VkCommandBufferBeginInfo info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-			info.flags = usage;
-			VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer_, &info));
-		}
-		void end() {
-			VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer_));
-		}
-		void beginRenderPass(const RenderPass& renderPass,VkRect2D area,ArrayProxy<const VkClearValue> clear) {
-			VkRenderPassBeginInfo info = { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
-			info.renderArea = area;
-			info.clearValueCount = clear.size();
-			info.pClearValues = clear.data();
-			info.renderPass = *renderPass;
-			vkCmdBeginRenderPass(commandBuffer_, &info, VK_SUBPASS_CONTENTS_INLINE);
-		}
-		void endRenderPass() {
-			vkCmdEndRenderPass(commandBuffer_);
-		}
-
-		void bindPipeline(const Pipeline& pipeline,VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS)
-		{
-			vkCmdBindPipeline(commandBuffer_, bindPoint, *pipeline);
-		}
-
-		void bindVertexBuffer(uint32_t first,ArrayProxy<const VkBuffer> buffer,ArrayProxy<const VkDeviceSize> offset) {
-			vkCmdBindVertexBuffers(commandBuffer_, 0, buffer.size(), buffer.data(), offset.data());
-		}
-
-		void bindIndexBuffer(VkBuffer buffer,uint32_t offset = 0,VkIndexType indexType = VK_INDEX_TYPE_UINT16) {
-			vkCmdBindIndexBuffer(commandBuffer_, buffer, offset, indexType);
-		}
-
-		void bindDescriptorSet(PipelineLayout& layout,uint32_t first,ArrayProxy<const VkDescriptorSet> sets, ArrayProxy<uint32_t> offset = nullptr, VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS) {
-			vkCmdBindDescriptorSets(commandBuffer_, bindPoint, *layout, first, sets.size(), sets.data(), offset.size(), offset.data());
-		}
-
-		void pushContants(PipelineLayout& layout,VkShaderStageFlags stage,uint32_t offset,uint32_t size,const void* value) {
-			vkCmdPushConstants(commandBuffer_, *layout, stage, offset, size, value);
-		}
-
-		template<typename T> void pushContants(PipelineLayout& layout, VkShaderStageFlags stage, uint32_t offset, const T& value) {
-			vkCmdPushConstants(commandBuffer_, *layout, stage, offset, sizeof(T), &value);
-		}
-
-		void copyBuffer(VkBuffer src,VkBuffer dst,ArrayProxy<const VkBufferCopy> region) {
-			vkCmdCopyBuffer(commandBuffer_, src, dst, region.size(), region.data());
-		}
-
-		void copyBufferToImage(VkBuffer src, VkImage dst,VkImageLayout layout, ArrayProxy<const VkBufferImageCopy> region) {
-			vkCmdCopyBufferToImage(commandBuffer_, src, dst, layout, region.size(), region.data());
-		}
-	private:
-		const Device_T* device_;
-		const CommandPool_T* pool_;
-		VkCommandBuffer commandBuffer_;
-	};
-
-	class Image_T
+	class Image_T : public Handle_T<VkImage>
 	{
 	public:
 		Image_T(const Device_T* device, VkImageCreateInfo& info, VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D);
 		Image_T(const Device_T* device, VkImageCreateInfo& info, VkImage image, VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D);
 		~Image_T();
-		operator VkImage() const { return image_; }
 		inline VkImageView view() const { return view_; }
 
 		void setLayout(CommandBuffer_T* cmd, VkImageLayout newLayout);
 
 		void upload(CommandBuffer& cmd, const void* value);
 
-		void upload(CommandPool& pool, Queue& queue, const void* value) {
-			auto cmd = pool->createCommandBuffer();
-			cmd->begin();
-			upload(cmd, value);
-			cmd->end();
-			queue->submit(cmd);
-			queue->waitIdle();
-		}
+		void upload(CommandPool& pool, Queue& queue, const void* value);
 	private:
 		void setupView(VkImageViewType viewType);
 
 		const Device_T* device_;
-		VkImage image_;
-		VkImageView view_;
-		VmaAllocation allocation_;
+		VkImageView view_ = VK_NULL_HANDLE;
+		VmaAllocation allocation_ = VK_NULL_HANDLE;
 		VkImageLayout layout_;
 		VkImageCreateInfo info_;
 	};
 
-	class Swapchain_T
+	class Swapchain_T : public Handle_T<VkSwapchainKHR>
 	{
 	public:
 		Swapchain_T(const Device_T* device, const Surface_T* surface);
-		~Swapchain_T() {
+		~Swapchain_T() { destroy(); }
+
+		void destroy() {
 			images_.swap(std::vector<Image>());
-			vkDestroySwapchainKHR(*device_, swapchain_, nullptr);
+			vkDestroySwapchainKHR(*device_, handle_, nullptr);
 		}
-		operator VkSwapchainKHR() const { return swapchain_; }
+
+		bool reCreate();
 
 		VkFormat getColorFormat() const { return colorFormat; }
 		VkExtent2D getExtent() const { return extent; }
 
 		uint32_t getImageCount() const { return static_cast<uint32_t>(images_.size()); }
 		VkImageView getView(uint32_t index) const { return images_.at(index)->view(); }
-
-		VkSwapchainKHR get() const { return swapchain_; }
 	private:
 		const Device_T* device_;
 		const Surface_T* surface_;
-		VkSwapchainKHR swapchain_ = VK_NULL_HANDLE;
 		VkExtent2D extent = {};
 		std::vector<Image> images_;
 		VkFormat colorFormat;
 	};
 
-	class Pipeline_T
+	class Pipeline_T : public Handle_T<VkPipeline>
 	{
 	public:
 		Pipeline_T(const Device_T* device, const VkGraphicsPipelineCreateInfo& info) : device_(device) {
-			VK_CHECK_RESULT(vkCreateGraphicsPipelines(*device_, VkPipelineCache(), 1, &info, nullptr, &pipeline_));
+			VK_CHECK_RESULT(vkCreateGraphicsPipelines(*device_, VkPipelineCache(), 1, &info, nullptr, &handle_));
 		}
 		Pipeline_T(const Device_T* device, const VkComputePipelineCreateInfo& info) : device_(device) {
-			VK_CHECK_RESULT(vkCreateComputePipelines(*device_, VkPipelineCache(), 1, &info, nullptr, &pipeline_));
+			VK_CHECK_RESULT(vkCreateComputePipelines(*device_, VkPipelineCache(), 1, &info, nullptr, &handle_));
 		}
-		~Pipeline_T() { vkDestroyPipeline(*device_, pipeline_, nullptr); }
-		operator VkPipeline() const { return pipeline_; }
+		~Pipeline_T() { vkDestroyPipeline(*device_, handle_, nullptr); }
 	private:
 		const Device_T* device_;
-		VkPipeline pipeline_;
 	};
 
-	class DescriptorSetLayout_T
+	class DescriptorSetLayout_T : public Handle_T<VkDescriptorSetLayout>
 	{
 	public:
 		DescriptorSetLayout_T(const Device_T* device, const VkDescriptorSetLayoutCreateInfo& info) : device_(device) {
-			VK_CHECK_RESULT(vkCreateDescriptorSetLayout(*device_, &info, nullptr, &layout_));
+			VK_CHECK_RESULT(vkCreateDescriptorSetLayout(*device_, &info, nullptr, &handle_));
 		}
-		~DescriptorSetLayout_T() { vkDestroyDescriptorSetLayout(*device_, layout_, nullptr); }
-		operator VkDescriptorSetLayout() const { return layout_; }
+		~DescriptorSetLayout_T() { vkDestroyDescriptorSetLayout(*device_, handle_, nullptr); }
 	private:
 		const Device_T* device_;
-		VkDescriptorSetLayout layout_;
 	};
 
-	class DescriptorSet_T
+	class DescriptorSet_T : public Handle_T<VkDescriptorSet>
 	{
 	public:
 		DescriptorSet_T(const Device_T* device, const DescriptorPool_T* pool, ArrayProxy<const VkDescriptorSetLayout> layouts) : device_(device), pool_(pool) {
@@ -451,32 +385,26 @@ namespace vg::vk
 			info.descriptorPool = *pool_;
 			info.descriptorSetCount = 1;
 			info.pSetLayouts = layouts.data();
-			VK_CHECK_RESULT(vkAllocateDescriptorSets(*device_, &info, &set_));
+			VK_CHECK_RESULT(vkAllocateDescriptorSets(*device_, &info, &handle_));
 		}
-		~DescriptorSet_T() { vkFreeDescriptorSets(*device_, *pool_,1, &set_); }
-		operator VkDescriptorSet() const { return set_; }
-
-		VkDescriptorSet get() const { return set_; }
+		~DescriptorSet_T() { vkFreeDescriptorSets(*device_, *pool_,1, &handle_); }
 	private:
 		const Device_T* device_;
 		const DescriptorPool_T* pool_;
-		VkDescriptorSet set_;
 	};
 
-	class PipelineLayout_T
+	class PipelineLayout_T : public Handle_T<VkPipelineLayout>
 	{
 	public:
 		PipelineLayout_T(const Device_T* device,const VkPipelineLayoutCreateInfo& info) : device_(device) {
-			VK_CHECK_RESULT(vkCreatePipelineLayout(*device_, &info, nullptr, &layout_));
+			VK_CHECK_RESULT(vkCreatePipelineLayout(*device_, &info, nullptr, &handle_));
 		}
-		~PipelineLayout_T() { vkDestroyPipelineLayout(*device_, layout_, nullptr); }
-		operator VkPipelineLayout() const { return layout_; }
+		~PipelineLayout_T() { vkDestroyPipelineLayout(*device_, handle_, nullptr); }
 	private:
 		const Device_T* device_;
-		VkPipelineLayout layout_;
 	};
 
-	class FrameBuffer_T
+	class FrameBuffer_T : public Handle_T<VkFramebuffer>
 	{
 	public:
 		FrameBuffer_T(const Device_T* device,const RenderPass_T* renderPass,uint32_t width,uint32_t height,ArrayProxy<const VkImageView> attachments) : device_(device) {
@@ -488,88 +416,39 @@ namespace vg::vk
 			info.attachmentCount = attachments.size();
 			info.pAttachments = attachments.data();
 
-			VK_CHECK_RESULT(vkCreateFramebuffer(*device_, &info, nullptr, &buffer_));
+			VK_CHECK_RESULT(vkCreateFramebuffer(*device_, &info, nullptr, &handle_));
 		}
-		~FrameBuffer_T() { vkDestroyFramebuffer(*device_, buffer_, nullptr); }
-		operator VkFramebuffer() const { return buffer_; }
+		~FrameBuffer_T() { vkDestroyFramebuffer(*device_, handle_, nullptr); }
 	private:
 		const Device_T* device_;
-		VkFramebuffer buffer_;
 	};
 
-	class Fence_T
+	class Fence_T : public Handle_T<VkFence>
 	{
 	public:
 		Fence_T(const Device_T* device) : device_(device) {
 			VkFenceCreateInfo info = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
 			info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-			VK_CHECK_RESULT(vkCreateFence(*device_, &info, nullptr, &fence_));
+			VK_CHECK_RESULT(vkCreateFence(*device_, &info, nullptr, &handle_));
 		}
-		~Fence_T() { vkDestroyFence(*device_, fence_, nullptr); }
-		operator VkFence() const { return fence_; }
-
-		VkFence get() const { return fence_; }
+		~Fence_T() { vkDestroyFence(*device_, handle_, nullptr); }
 	private:
 		const Device_T* device_;
-		VkFence fence_;
 	};
 
-	class Semaphore_T
+	class Semaphore_T : public Handle_T<VkSemaphore>
 	{
 	public:
 		Semaphore_T(const Device_T* device) : device_(device) {
 			VkSemaphoreCreateInfo info = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
-			VK_CHECK_RESULT(vkCreateSemaphore(*device_, &info, nullptr, &semaphore_));
+			VK_CHECK_RESULT(vkCreateSemaphore(*device_, &info, nullptr, &handle_));
 		}
-		~Semaphore_T() { vkDestroySemaphore(*device_, semaphore_, nullptr); }
-		operator VkSemaphore() const { return semaphore_; }
-
-		VkSemaphore get() const { return semaphore_; }
+		~Semaphore_T() { vkDestroySemaphore(*device_, handle_, nullptr); }
 	private:
 		const Device_T* device_;
-		VkSemaphore semaphore_;
 	};
 
-	class Queue_T
-	{
-	public:
-		Queue_T(VkQueue queue) : queue_(queue) {}
-
-		void submit(ArrayProxy<const VkCommandBuffer> cmds, ArrayProxy<const VkSemaphore> wait = nullptr, ArrayProxy<const VkSemaphore> signal = nullptr,VkFence fence = VkFence(),VkPipelineStageFlags waitStage = 0) {
-			VkSubmitInfo info = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
-			info.commandBufferCount = cmds.size();
-			info.pCommandBuffers = cmds.data();
-			info.waitSemaphoreCount = wait.size();
-			info.pWaitSemaphores = wait.data();
-			info.signalSemaphoreCount = signal.size();
-			info.pSignalSemaphores = signal.data();
-			info.pWaitDstStageMask = &waitStage;
-			VK_CHECK_RESULT(vkQueueSubmit(queue_, 1, &info, fence));
-		}
-
-		void submit(CommandBuffer& cmd) {
-			submit(VkCommandBuffer(*cmd));
-		}
-
-		VkResult present(ArrayProxy<const VkSwapchainKHR> swapchain,uint32_t* imageIndex, ArrayProxy<const VkSemaphore> wait) {
-			VkPresentInfoKHR info = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
-			info.swapchainCount = swapchain.size();
-			info.pSwapchains = swapchain.data();
-			info.waitSemaphoreCount = wait.size();
-			info.pWaitSemaphores = wait.data();
-			info.pImageIndices = imageIndex;
-			return vkQueuePresentKHR(queue_, &info);
-		}
-
-		void waitIdle() { vkQueueWaitIdle(queue_); }
-
-		Queue clone() const { return std::make_unique<Queue_T>(queue_); }
-
-	private:
-		VkQueue queue_;
-	};
-
-	class Buffer_T
+	class Buffer_T : public Handle_T<VkBuffer>
 	{
 	public:
 		enum class Type
@@ -583,37 +462,148 @@ namespace vg::vk
 
 		Buffer_T(const Device_T* device,VkDeviceSize size, VkBufferUsageFlags usage, Type type);
 		~Buffer_T();
-		operator VkBuffer() const { return buffer_; }
 
-		void uploadLocal(const void* value, VkDeviceSize size);
-		template<typename T> void uploadLocal(T& value) { uploadLocal(&value,sizeof(T)); };
-		void upload(vk::CommandBuffer& cmd, const void* value, VkDeviceSize size);
+		void uploadLocal(const void* value);
+		void upload(CommandBuffer& cmd, const void* value);
+		void upload(CommandPool& pool, Queue& queue, const void* value);
 
 		void* map();
 		void unmap();
 		void flush();
 
-		uint32_t size() const { return size_; }
-
-		VkBuffer get() const { return buffer_; }
+		VkDeviceSize size() const { return size_; }
 	private:
 		const Device_T* device_;
-		VkBuffer buffer_;
 		VmaAllocation allocation_;
-		uint32_t size_ = 0;
+		VkDeviceSize size_ = 0;
 	};
 
-	class Sampler_T
+	class Sampler_T : public Handle_T<VkSampler>
 	{
 	public:
-		Sampler_T(const Device_T* device, const VkSamplerCreateInfo& info) {
-			VK_CHECK_RESULT(vkCreateSampler(*device_, &info, nullptr, &sampler_));
+		Sampler_T(const Device_T* device, const VkSamplerCreateInfo& info) :device_(device) {
+			VK_CHECK_RESULT(vkCreateSampler(*device_, &info, nullptr, &handle_));
 		}
-		~Sampler_T() { vkDestroySampler(*device_, sampler_, nullptr); }
-		operator VkSampler() const { return sampler_; }
+		~Sampler_T() { vkDestroySampler(*device_, handle_, nullptr); }
 	private:
 		const Device_T* device_;
-		VkSampler sampler_;
+	};
+
+	class CommandBuffer_T : public Handle_T<VkCommandBuffer>
+	{
+	public:
+		CommandBuffer_T(const Device_T* device, const CommandPool_T* pool);
+		~CommandBuffer_T();
+
+		void pipelineBarrier(VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask, VkDependencyFlags dependencyFlags,
+			ArrayProxy<const VkMemoryBarrier> memoryBarriers,
+			ArrayProxy<const VkBufferMemoryBarrier> bufferMemoryBarriers,
+			ArrayProxy<const VkImageMemoryBarrier> imageMemoryBarriers)
+		{
+			vkCmdPipelineBarrier(handle_, srcStageMask, dstStageMask, dependencyFlags,
+				memoryBarriers.size(), memoryBarriers.data(),
+				bufferMemoryBarriers.size(), bufferMemoryBarriers.data(),
+				imageMemoryBarriers.size(), imageMemoryBarriers.data());
+		}
+
+		void begin(VkCommandBufferUsageFlags usage = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) {
+			VkCommandBufferBeginInfo info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+			info.flags = usage;
+			VK_CHECK_RESULT(vkBeginCommandBuffer(handle_, &info));
+		}
+		void end() {
+			VK_CHECK_RESULT(vkEndCommandBuffer(handle_));
+		}
+		void beginRenderPass(const RenderPass& renderPass,const FrameBuffer& frameBuffer, VkRect2D area, ArrayProxy<const VkClearValue> clear) {
+			VkRenderPassBeginInfo info = { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
+			info.renderArea = area;
+			info.clearValueCount = clear.size();
+			info.pClearValues = clear.data();
+			info.renderPass = renderPass->get();
+			info.framebuffer = frameBuffer->get();
+			vkCmdBeginRenderPass(handle_, &info, VK_SUBPASS_CONTENTS_INLINE);
+		}
+		void endRenderPass() {
+			vkCmdEndRenderPass(handle_);
+		}
+
+		void bindPipeline(const Pipeline& pipeline, VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS)
+		{
+			vkCmdBindPipeline(handle_, bindPoint, *pipeline);
+		}
+
+		void bindVertexBuffer(uint32_t first, ArrayProxy<const VkBuffer> buffer, ArrayProxy<const VkDeviceSize> offset) {
+			vkCmdBindVertexBuffers(handle_, 0, buffer.size(), buffer.data(), offset.data());
+		}
+
+		void bindIndexBuffer(VkBuffer buffer, uint32_t offset = 0, VkIndexType indexType = VK_INDEX_TYPE_UINT16) {
+			vkCmdBindIndexBuffer(handle_, buffer, offset, indexType);
+		}
+
+		void bindDescriptorSet(PipelineLayout& layout, uint32_t first, ArrayProxy<const VkDescriptorSet> sets, ArrayProxy<uint32_t> offset = nullptr, VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS) {
+			vkCmdBindDescriptorSets(handle_, bindPoint, *layout, first, sets.size(), sets.data(), offset.size(), offset.data());
+		}
+
+		void pushContants(PipelineLayout& layout, VkShaderStageFlags stage, uint32_t offset, uint32_t size, const void* value) {
+			vkCmdPushConstants(handle_, *layout, stage, offset, size, value);
+		}
+
+		template<typename T> void pushContants(PipelineLayout& layout, VkShaderStageFlags stage, uint32_t offset, const T& value) {
+			vkCmdPushConstants(handle_, *layout, stage, offset, sizeof(T), &value);
+		}
+
+		template<typename T1, typename T2, typename T3, typename T4> void viewport(T1 x, T2 y, T3 width, T4 height) {
+			VkViewport value = { static_cast<float>(x),static_cast<float>(y), static_cast<float>(width), static_cast<float>(height),0.0f,1.0f };
+			vkCmdSetViewport(handle_, 0, 1, &value);
+		}
+
+		template<typename T1, typename T2, typename T3, typename T4> void scissor(T1 x, T2 y, T3 width, T4 height) {
+			VkRect2D value = { {static_cast<int32_t>(x),static_cast<int32_t>(y)},{static_cast<uint32_t>(width),static_cast<uint32_t>(height)} };
+			vkCmdSetScissor(handle_, 0, 1, &value);
+		}
+
+		void lineWidth(float width)
+		{
+			vkCmdSetLineWidth(handle_, width);
+		}
+
+		void draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex = 0, uint32_t firstInstance = 0) {
+			vkCmdDraw(handle_, vertexCount, instanceCount, firstVertex, firstInstance);
+		}
+
+		void drawIndexd(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex = 0, int32_t vertexOffset = 0, uint32_t firstInstance = 0) {
+			vkCmdDrawIndexed(handle_, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+		}
+
+		void copyBuffer(VkBuffer src, VkBuffer dst, ArrayProxy<const VkBufferCopy> region) {
+			vkCmdCopyBuffer(handle_, src, dst, region.size(), region.data());
+		}
+
+		void copyBufferToImage(VkBuffer src, VkImage dst, VkImageLayout layout, ArrayProxy<const VkBufferImageCopy> region) {
+			vkCmdCopyBufferToImage(handle_, src, dst, layout, region.size(), region.data());
+		}
+	private:
+		const Device_T* device_;
+		const CommandPool_T* pool_;
+	};
+
+	class CommandPool_T : public Handle_T<VkCommandPool>
+	{
+	public:
+		CommandPool_T(const Device_T* device, uint32_t familyIndex) : device_(device), familyIndex_(familyIndex) {
+			VkCommandPoolCreateInfo info = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+			info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+			info.queueFamilyIndex = familyIndex_;
+			VK_CHECK_RESULT(vkCreateCommandPool(*device_, &info, nullptr, &handle_));
+		}
+		~CommandPool_T() { vkDestroyCommandPool(*device_, handle_, nullptr); }
+
+		inline CommandBuffer createCommandBuffer() {
+			return std::make_unique<CommandBuffer_T>(device_, this);
+		}
+	private:
+		const Device_T* device_;
+		uint32_t familyIndex_;
 	};
 
 	class InstanceMaker
@@ -859,7 +849,7 @@ namespace vg::vk
 			rasterizationState_.lineWidth = 1.0f;
 
 			depthStencilState_.depthTestEnable = VK_FALSE;
-			depthStencilState_.depthWriteEnable = VK_TRUE;
+			depthStencilState_.depthWriteEnable = VK_FALSE;
 			depthStencilState_.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 			depthStencilState_.depthBoundsTestEnable = VK_FALSE;
 			depthStencilState_.back.failOp = VK_STENCIL_OP_KEEP;
@@ -867,9 +857,10 @@ namespace vg::vk
 			depthStencilState_.back.compareOp = VK_COMPARE_OP_ALWAYS;
 			depthStencilState_.stencilTestEnable = VK_FALSE;
 			depthStencilState_.front = depthStencilState_.back;
+			depthStencilState_.maxDepthBounds = 1.0f;
 		}
 
-		Pipeline create(const VkPipelineLayout& pipelineLayout, const VkRenderPass& renderPass) {
+		Pipeline create(const PipelineLayout& pipelineLayout, const RenderPass& renderPass) {
 			auto count = (uint32_t)colorBlendAttachments_.size();
 			colorBlendState_.attachmentCount = count;
 			colorBlendState_.pAttachments = count ? colorBlendAttachments_.data() : nullptr;
@@ -900,8 +891,8 @@ namespace vg::vk
 			pipelineInfo.pMultisampleState = &multisampleState_;
 			pipelineInfo.pColorBlendState = &colorBlendState_;
 			pipelineInfo.pDepthStencilState = &depthStencilState_;
-			pipelineInfo.layout = pipelineLayout;
-			pipelineInfo.renderPass = renderPass;
+			pipelineInfo.layout = pipelineLayout->get();
+			pipelineInfo.renderPass = renderPass->get();
 			pipelineInfo.pDynamicState = dynamicState_.empty() ? nullptr : &dynState;
 			pipelineInfo.subpass = subpass_;
 
@@ -915,7 +906,7 @@ namespace vg::vk
 			return std::move(result);
 		}
 
-		void shader(VkShaderStageFlagBits stage,size_t size,const uint32_t* code) {
+		PipelineMaker& shader(VkShaderStageFlagBits stage,size_t size,const uint32_t* code) {
 			VkShaderModuleCreateInfo shaderInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
 			shaderInfo.codeSize = size;
 			shaderInfo.pCode = code;
@@ -927,15 +918,15 @@ namespace vg::vk
 			info.pName = "main";
 			info.stage = stage;
 			modules_.emplace_back(info);
+
+			return *this;
 		}
 
-		void shaderGLSL(VkShaderStageFlagBits stage, const std::string& src);
+		PipelineMaker& shaderGLSL(VkShaderStageFlagBits stage, const std::string& src);
 
-		void subPass(uint32_t subpass) {
-			subpass_ = subpass;
-		}
+		PipelineMaker& subPass(uint32_t subpass) { subpass_ = subpass; return *this; }
 
-		void defaultBlend(VkBool32 enable) {
+		PipelineMaker& defaultBlend(VkBool32 enable) {
 			VkPipelineColorBlendAttachmentState blend = {};
 			blend.blendEnable = enable;
 			blend.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
@@ -946,9 +937,10 @@ namespace vg::vk
 			blend.alphaBlendOp = VK_BLEND_OP_ADD;
 			blend.colorWriteMask = 0xf;
 			colorBlendAttachments_.push_back(blend);
+			return *this;
 		}
 
-		void blendBegin(VkBool32 enable) {
+		PipelineMaker& blendBegin(VkBool32 enable) {
 			colorBlendAttachments_.emplace_back();
 			auto& blend = colorBlendAttachments_.back();
 			blend.blendEnable = enable;
@@ -959,30 +951,33 @@ namespace vg::vk
 			blend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 			blend.alphaBlendOp = VK_BLEND_OP_ADD;
 			blend.colorWriteMask = 0xf;
+			return *this;
 		}
 
-		void blendEnable(VkBool32 value) { colorBlendAttachments_.back().blendEnable = value; }
+		PipelineMaker& blendEnable(VkBool32 value) { colorBlendAttachments_.back().blendEnable = value; return *this;}
 
-		void blendSrcColorBlendFactor(VkBlendFactor value) { colorBlendAttachments_.back().srcColorBlendFactor = value; }
+		PipelineMaker& blendSrcColorBlendFactor(VkBlendFactor value) { colorBlendAttachments_.back().srcColorBlendFactor = value; return *this;}
 
-		void blendDstColorBlendFactor(VkBlendFactor value) { colorBlendAttachments_.back().dstColorBlendFactor = value; }
+		PipelineMaker& blendDstColorBlendFactor(VkBlendFactor value) { colorBlendAttachments_.back().dstColorBlendFactor = value; return *this;}
 
-		void blendColorBlendOp(VkBlendOp value) { colorBlendAttachments_.back().colorBlendOp = value; }
+		PipelineMaker& blendColorBlendOp(VkBlendOp value) { colorBlendAttachments_.back().colorBlendOp = value; return *this;}
 
-		void blendSrcAlphaBlendFactor(VkBlendFactor value) { colorBlendAttachments_.back().srcAlphaBlendFactor = value; }
+		PipelineMaker& blendSrcAlphaBlendFactor(VkBlendFactor value) { colorBlendAttachments_.back().srcAlphaBlendFactor = value; return *this;}
 
-		void blendDstAlphaBlendFactor(VkBlendFactor value) { colorBlendAttachments_.back().dstAlphaBlendFactor = value; }
+		PipelineMaker& blendDstAlphaBlendFactor(VkBlendFactor value) { colorBlendAttachments_.back().dstAlphaBlendFactor = value; return *this;}
 
-		void blendAlphaBlendOp(VkBlendOp value) { colorBlendAttachments_.back().alphaBlendOp = value; }
+		PipelineMaker& blendAlphaBlendOp(VkBlendOp value) { colorBlendAttachments_.back().alphaBlendOp = value; return *this;}
 
-		void blendColorWriteMask(VkColorComponentFlags value) { colorBlendAttachments_.back().colorWriteMask = value; }
+		PipelineMaker& blendColorWriteMask(VkColorComponentFlags value) { colorBlendAttachments_.back().colorWriteMask = value; return *this;}
 
-		void vertexAttribute(uint32_t location, uint32_t binding, VkFormat format, uint32_t offset) {
+		PipelineMaker& vertexAttribute(uint32_t location, uint32_t binding, VkFormat format, uint32_t offset) {
 			vertexAttributeDescriptions_.push_back({ location, binding, format, offset });
+			return *this;
 		}
 
-		void vertexBinding(uint32_t binding, uint32_t stride, VkVertexInputRate inputRate = VK_VERTEX_INPUT_RATE_VERTEX) {
+		PipelineMaker& vertexBinding(uint32_t binding, uint32_t stride, VkVertexInputRate inputRate = VK_VERTEX_INPUT_RATE_VERTEX) {
 			vertexBindingDescriptions_.push_back({ binding, stride, inputRate });
+			return *this;
 		}
 
 		PipelineMaker& topology(VkPrimitiveTopology topology) { inputAssemblyState_.topology = topology; return *this; }
@@ -1050,8 +1045,8 @@ namespace vg::vk
 		void pushConstant(VkShaderStageFlags stage, uint32_t offset, uint32_t size) {
 			pushConstants_.push_back({ stage,offset,size });
 		}
-		void setLayout(VkDescriptorSetLayout layout) {
-			setLayouts_.emplace_back(layout);
+		void setLayout(const DescriptorSetLayout& layout) {
+			setLayouts_.emplace_back(layout->get());
 		}
 		PipelineLayout create(const Device& device) {
 			VkPipelineLayoutCreateInfo info = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
@@ -1123,7 +1118,7 @@ namespace vg::vk
 			return std::make_unique<Sampler_T>(device.get(), info);
 		}
 	private:
-		VkSamplerCreateInfo info;
+		VkSamplerCreateInfo info = {};
 	};
 
 	class DescriptorSetUpdater {
@@ -1133,8 +1128,8 @@ namespace vg::vk
 			imageInfo_.resize(maxImages);
 		}
 
-		void beginDescriptorSet(VkDescriptorSet dstSet) {
-			dstSet_ = dstSet;
+		void beginDescriptorSet(const DescriptorSet& dstSet) {
+			dstSet_ = dstSet->get();
 		}
 
 		void beginImages(uint32_t dstBinding, uint32_t dstArrayElement, VkDescriptorType descriptorType) {
@@ -1148,10 +1143,10 @@ namespace vg::vk
 			descriptorWrites_.push_back(wdesc);
 		}
 
-		void image(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout) {
+		void image(Sampler& sampler, VkImageView imageView, VkImageLayout imageLayout) {
 			if (!descriptorWrites_.empty() && numImages_ != imageInfo_.size() && descriptorWrites_.back().pImageInfo) {
 				descriptorWrites_.back().descriptorCount++;
-				imageInfo_[numImages_++] = { sampler, imageView, imageLayout };
+				imageInfo_[numImages_++] = { sampler->get(), imageView, imageLayout };
 			}
 			else {
 				ok_ = false;
@@ -1169,23 +1164,18 @@ namespace vg::vk
 			descriptorWrites_.push_back(wdesc);
 		}
 
-		void buffer(VkBuffer buffer, VkDeviceSize offset, VkDeviceSize range) {
+		void buffer(const Buffer& buffer, VkDeviceSize offset, VkDeviceSize range) {
 			if (!descriptorWrites_.empty() && numBuffers_ != bufferInfo_.size() && descriptorWrites_.back().pBufferInfo) {
 				descriptorWrites_.back().descriptorCount++;
-				bufferInfo_[numBuffers_++] = { buffer, offset, range };
+				bufferInfo_[numBuffers_++] = { buffer->get(), offset, range };
 			}
 			else {
 				ok_ = false;
 			}
 		}
 
-		void copy(vk::DescriptorSet srcSet, uint32_t srcBinding, uint32_t srcArrayElement, vk::DescriptorSet dstSet, uint32_t dstBinding, uint32_t dstArrayElement, uint32_t descriptorCount) {
-			descriptorCopies_.emplace_back(srcSet, srcBinding, srcArrayElement, dstSet, dstBinding, dstArrayElement, descriptorCount);
-		}
-
-		/// Call this to update the descriptor sets with their pointers (but not data).
 		void update(const Device& device) const {
-			vkUpdateDescriptorSets(*device, static_cast<uint32_t>(descriptorWrites_.size()), descriptorWrites_.data(), static_cast<uint32_t>(descriptorCopies_.size()), descriptorCopies_.data());
+			vkUpdateDescriptorSets(*device, static_cast<uint32_t>(descriptorWrites_.size()), descriptorWrites_.data(), 0, nullptr);
 		}
 
 		bool ok() const { return ok_; }
@@ -1193,14 +1183,13 @@ namespace vg::vk
 		std::vector<VkDescriptorBufferInfo> bufferInfo_;
 		std::vector<VkDescriptorImageInfo> imageInfo_;
 		std::vector<VkWriteDescriptorSet> descriptorWrites_;
-		std::vector<VkCopyDescriptorSet> descriptorCopies_;
 		VkDescriptorSet dstSet_;
 		int numBuffers_ = 0;
 		int numImages_ = 0;
 		bool ok_ = true;
 	};
 
-	inline std::vector<VkQueueFamilyProperties> getQueueFamilyProperties(VkPhysicalDevice physicalDevice) {
+	static std::vector<VkQueueFamilyProperties> getQueueFamilyProperties(VkPhysicalDevice physicalDevice) {
 		uint32_t count = 0;
 		vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, nullptr);
 		std::vector<VkQueueFamilyProperties> props(count);
@@ -1208,7 +1197,7 @@ namespace vg::vk
 		return std::move(props);
 	}
 
-	inline VkBool32 getSurfaceSupport(VkPhysicalDevice physicalDevice,uint32_t familyIndex, VkSurfaceKHR surface)
+	static VkBool32 getSurfaceSupport(VkPhysicalDevice physicalDevice,uint32_t familyIndex, VkSurfaceKHR surface)
 	{
 		VkBool32 support;
 		VK_CHECK_RESULT(vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, familyIndex, surface, &support));

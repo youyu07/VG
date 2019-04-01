@@ -14,7 +14,6 @@ namespace vg
 
 		vk::Pipeline pipeline;
 
-		vku::TextureImage2D tex;
 		vk::DescriptorSet descriptorSet;
 
 		vk::Buffer vertexBuffer;
@@ -22,7 +21,7 @@ namespace vg
 	public:
 		ImguiRenderState() {}
 
-		ImguiRenderState(const Context& ctx, vk::RenderPass renderPass)
+		ImguiRenderState(const Context& ctx)
 		{
 			{
 				vk::SamplerMaker sm;
@@ -50,7 +49,7 @@ namespace vg
 			{
 				vk::PipelineLayoutMaker plm;
 				plm.pushConstant(VK_SHADER_STAGE_VERTEX_BIT, 0, 16);
-				plm.setLayout(*setLayout);
+				plm.setLayout(setLayout);
 				layout = plm.create(ctx->getDevice());
 			}
 
@@ -59,18 +58,18 @@ namespace vg
 				descriptorSet = ctx->getDescriptorPool()->createDescriptorSet(sets);
 
 				vk::DescriptorSetUpdater update;
-				update.beginDescriptorSet(*descriptorSet);
+				update.beginDescriptorSet(descriptorSet);
 
 				update.beginImages(0, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-				update.image(*sampler, tex->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+				update.image(sampler, tex->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 				update.update(ctx->getDevice());
 			}
 
-			setupPipeline(ctx, renderPass);
+			setupPipeline(ctx);
 		}
 
-		void setupPipeline(const Context& ctx, const vk::RenderPass& renderPass)
+		void setupPipeline(const Context& ctx)
 		{
 			const std::string vert =
 				"#version 450 core\n"
@@ -127,7 +126,7 @@ namespace vg
 				pm.dynamicState(VK_DYNAMIC_STATE_SCISSOR);
 				pm.blendBegin(VK_TRUE);
 				pm.rasterizationSamples(ctx->getSampleCount());
-				pipeline = pm.create(*layout, *renderPass);
+				pipeline = pm.create(layout, ctx->getRenderPass());
 			}
 		}
 
@@ -136,11 +135,11 @@ namespace vg
 			// Create the Vertex and Index buffers:
 			uint32_t vertex_size = data->TotalVtxCount * sizeof(ImDrawVert);
 			uint32_t index_size = data->TotalIdxCount * sizeof(ImDrawIdx);
-			if (vertexBuffer->size() < vertex_size)
+			if (!vertexBuffer || vertexBuffer->size() < vertex_size)
 			{
 				vertexBuffer = ctx->getDevice()->createVertexBuffer(vertex_size, VK_TRUE);
 			}
-			if (indexBuffer->size() < index_size)
+			if (!indexBuffer || indexBuffer->size() < index_size)
 			{
 				indexBuffer = ctx->getDevice()->createIndexBuffer(index_size, VK_TRUE);
 			}
@@ -220,10 +219,8 @@ namespace vg
 
 							if (clip_rect.x < width && clip_rect.y < height && clip_rect.z >= 0.0f && clip_rect.w >= 0.0f)
 							{
-								auto scissor = vk::Rect2D{ {static_cast<int32_t>(clip_rect.x), static_cast<int32_t>(clip_rect.y)}, 
-									{static_cast<uint32_t>(clip_rect.z - clip_rect.x), static_cast<uint32_t>(clip_rect.w - clip_rect.y)} };
-								cmd.setScissor(0, scissor);
-								cmd.drawIndexed(pcmd->ElemCount, 1, idx_offset, vtx_offset, 0);
+								cmd->scissor(clip_rect.x, clip_rect.y, clip_rect.z - clip_rect.x, clip_rect.w - clip_rect.y);
+								cmd->drawIndexd(pcmd->ElemCount, 1, idx_offset, vtx_offset);
 							}
 						}
 						idx_offset += pcmd->ElemCount;

@@ -7,7 +7,7 @@
 namespace vg::vk
 {
 
-	Surface Instance_T::createSurface(const void* windowHandle)
+	Surface Instance_T::createSurface(const void* windowHandle) const
 	{
 		VkSurfaceKHR surface_;
 
@@ -15,13 +15,13 @@ namespace vg::vk
 		VkWin32SurfaceCreateInfoKHR surfaceInfo = { VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR };
 		surfaceInfo.hinstance = ::GetModuleHandle(NULL);
 		surfaceInfo.hwnd = HWND(windowHandle);
-		VK_CHECK_RESULT(vkCreateWin32SurfaceKHR(instance_, &surfaceInfo, nullptr, &surface_));
+		VK_CHECK_RESULT(vkCreateWin32SurfaceKHR(handle_, &surfaceInfo, nullptr, &surface_));
 #endif // WIN32
 
 		return std::make_unique<Surface_T>(this, surface_);
 	}
 
-	Device_T::Device_T(VkPhysicalDevice physicalDevice, VkDevice device) : physicalDevice_(physicalDevice), device_(device)
+	Device_T::Device_T(VkPhysicalDevice physicalDevice, VkDevice device) : physicalDevice_(physicalDevice), Handle_T(device)
 	{
 		VmaAllocatorCreateInfo allocatorInfo = {};
 		allocatorInfo.physicalDevice = physicalDevice;
@@ -35,13 +35,42 @@ namespace vg::vk
 		return std::make_unique<Buffer_T>(this, size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, dynamic ? Buffer_T::Type::CPU_TO_GPU : Buffer_T::Type::GPU_ONLY);
 	}
 
-	Buffer Device_T::createVertexBuffer(VkDeviceSize size, VkBool32 dynamic = false)
+	Buffer Device_T::createVertexBuffer(VkDeviceSize size, VkBool32 dynamic)
 	{
 		return std::make_unique<Buffer_T>(this, size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, dynamic ? Buffer_T::Type::CPU_TO_GPU : Buffer_T::Type::GPU_ONLY);
 	}
-	Buffer Device_T::createIndexBuffer(VkDeviceSize size, VkBool32 dynamic = false)
+	Buffer Device_T::createIndexBuffer(VkDeviceSize size, VkBool32 dynamic)
 	{
 		return std::make_unique<Buffer_T>(this, size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, dynamic ? Buffer_T::Type::CPU_TO_GPU : Buffer_T::Type::GPU_ONLY);
+	}
+
+	void Queue_T::submit(ArrayProxy<const VkCommandBuffer> cmds, ArrayProxy<const VkSemaphore> wait, ArrayProxy<const VkSemaphore> signal, VkFence fence, VkPipelineStageFlags waitStage) 
+	{
+		VkSubmitInfo info = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
+		info.commandBufferCount = cmds.size();
+		info.pCommandBuffers = cmds.data();
+		info.waitSemaphoreCount = wait.size();
+		info.pWaitSemaphores = wait.data();
+		info.signalSemaphoreCount = signal.size();
+		info.pSignalSemaphores = signal.data();
+		info.pWaitDstStageMask = &waitStage;
+		VK_CHECK_RESULT(vkQueueSubmit(handle_, 1, &info, fence));
+	}
+
+	void Queue_T::submit(CommandBuffer& cmd) 
+	{
+		submit(cmd->get());
+	}
+
+	VkResult Queue_T::present(ArrayProxy<const VkSwapchainKHR> swapchain, uint32_t* imageIndex, ArrayProxy<const VkSemaphore> wait) 
+	{
+		VkPresentInfoKHR info = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
+		info.swapchainCount = swapchain.size();
+		info.pSwapchains = swapchain.data();
+		info.waitSemaphoreCount = wait.size();
+		info.pWaitSemaphores = wait.data();
+		info.pImageIndices = imageIndex;
+		return vkQueuePresentKHR(handle_, &info);
 	}
 
 	static VkImageAspectFlags getAspect(VkFormat format) {
@@ -221,12 +250,12 @@ namespace vg::vk
 		createInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 		VmaAllocationInfo allocationInfo = {};
 
-		VK_CHECK_RESULT(vmaCreateImage(device_->allocator(), &info_, &createInfo, &image_, &allocation_, &allocationInfo));
+		VK_CHECK_RESULT(vmaCreateImage(device_->allocator(), &info_, &createInfo, &handle_, &allocation_, &allocationInfo));
 
 		setupView(viewType);
 	}
 
-	Image_T::Image_T(const Device_T* device, VkImageCreateInfo& info, VkImage image, VkImageViewType viewType) : device_(device), info_(info), image_(image)
+	Image_T::Image_T(const Device_T* device, VkImageCreateInfo& info, VkImage image, VkImageViewType viewType) : device_(device), info_(info), Handle_T(image)
 	{
 		setupView(viewType);
 	}
@@ -236,8 +265,8 @@ namespace vg::vk
 		if (view_) {
 			vkDestroyImageView(*device_, view_, nullptr);
 		}
-		if (image_ && allocation_) {
-			vmaDestroyImage(device_->allocator(), image_, allocation_);
+		if (handle_ && allocation_) {
+			vmaDestroyImage(device_->allocator(), handle_, allocation_);
 		}
 	}
 
@@ -245,12 +274,21 @@ namespace vg::vk
 	{
 		auto size = getBlockParams(info_.format).bytesPerBlock * info_.extent.width * info_.extent.height;
 		auto staging = std::make_unique<Buffer_T>(device_, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Buffer_T::Type::CPU_ONLY);
-		staging->uploadLocal(value, size);
+		staging->uploadLocal(value);
 
 		VkBufferImageCopy region = {};
 		region.imageExtent = info_.extent;
 		region.imageSubresource = { getAspect(info_.format),0,0,1 };
-		cmd->copyBufferToImage(*staging, image_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, region);
+		cmd->copyBufferToImage(*staging, handle_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, region);
+	}
+
+	void Image_T::upload(CommandPool& pool, Queue& queue, const void* value) {
+		auto cmd = pool->createCommandBuffer();
+		cmd->begin();
+		upload(cmd, value);
+		cmd->end();
+		queue->submit(cmd);
+		queue->waitIdle();
 	}
 
 	Image Device_T::createTexture2D(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format)
@@ -298,7 +336,7 @@ namespace vg::vk
 	void Image_T::setupView(VkImageViewType viewType)
 	{
 		VkImageViewCreateInfo viewInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
-		viewInfo.image = image_;
+		viewInfo.image = handle_;
 		viewInfo.viewType = viewType;
 		viewInfo.format = info_.format;
 		viewInfo.subresourceRange = { getAspect(info_.format), 0, info_.mipLevels, 0, info_.arrayLayers };
@@ -316,7 +354,7 @@ namespace vg::vk
 		imageMemoryBarriers.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		imageMemoryBarriers.oldLayout = oldLayout;
 		imageMemoryBarriers.newLayout = newLayout;
-		imageMemoryBarriers.image = image_;
+		imageMemoryBarriers.image = handle_;
 		imageMemoryBarriers.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, info_.mipLevels, 0, info_.arrayLayers };
 
 		auto srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
@@ -357,18 +395,23 @@ namespace vg::vk
 
 	Swapchain_T::Swapchain_T(const Device_T* device, const Surface_T* surface) : device_(device),surface_(surface)
 	{
-		auto formats = device_->getSurfaceFormat(*surface);
-		VkSurfaceFormatKHR surfaceFormat = {VK_FORMAT_B8G8R8A8_UNORM,VK_COLORSPACE_SRGB_NONLINEAR_KHR};
+		reCreate();
+	}
+
+	bool Swapchain_T::reCreate()
+	{
+		auto formats = device_->getSurfaceFormat(surface_->get());
+		VkSurfaceFormatKHR surfaceFormat = { VK_FORMAT_B8G8R8A8_UNORM,VK_COLORSPACE_SRGB_NONLINEAR_KHR };
 		colorFormat = surfaceFormat.format;
 
-		auto capabilities = device_->getSurfaceCapabilities(*surface);
+		auto capabilities = device_->getSurfaceCapabilities(surface_->get());
 
 		extent = capabilities.currentExtent;
 		if (extent.width == 0 || extent.height == 0) {
-			return;
+			return false;
 		}
 
-		VkSwapchainCreateInfoKHR info = {VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
+		VkSwapchainCreateInfoKHR info = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
 		info.imageExtent = capabilities.currentExtent;
 		info.preTransform = capabilities.currentTransform;
 		info.surface = *surface_;
@@ -380,13 +423,19 @@ namespace vg::vk
 		info.imageColorSpace = surfaceFormat.colorSpace;
 		info.imageArrayLayers = 1;
 		info.clipped = VK_TRUE;
-		info.oldSwapchain = swapchain_;
-		VK_CHECK_RESULT(vkCreateSwapchainKHR(*device_, &info, nullptr, &swapchain_));
+		info.oldSwapchain = handle_;
+		VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+		VK_CHECK_RESULT(vkCreateSwapchainKHR(*device_, &info, nullptr, &swapchain));
+
+		if (handle_ != VK_NULL_HANDLE) {
+			destroy();
+		}
+		handle_ = swapchain;
 
 		uint32_t count = 0;
-		VK_CHECK_RESULT(vkGetSwapchainImagesKHR(*device_, swapchain_, &count, nullptr));
+		VK_CHECK_RESULT(vkGetSwapchainImagesKHR(*device_, handle_, &count, nullptr));
 		std::vector<VkImage> images(count);
-		VK_CHECK_RESULT(vkGetSwapchainImagesKHR(*device_, swapchain_, &count, images.data()));
+		VK_CHECK_RESULT(vkGetSwapchainImagesKHR(*device_, handle_, &count, images.data()));
 		VkImageCreateInfo imageInfo = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
 		imageInfo.format = info.imageFormat;
 		imageInfo.extent = { extent.width,extent.height,1 };
@@ -398,8 +447,82 @@ namespace vg::vk
 		imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 		for (auto& image : images)
 		{
-			images_.emplace_back(std::make_unique<Image_T>(device, imageInfo,image));
+			images_.emplace_back(std::make_unique<Image_T>(device_, imageInfo, image));
 		}
+		return true;
+	}
+
+	Buffer_T::Buffer_T(const Device_T* device,VkDeviceSize size,VkBufferUsageFlags usage, Type type) : device_(device),size_(size)
+	{
+		VkBufferCreateInfo info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+		info.size = size;
+		info.usage = usage;
+
+		VmaAllocationCreateInfo createInfo = {};
+		createInfo.usage = static_cast<VmaMemoryUsage>(type);
+
+		VK_CHECK_RESULT(vmaCreateBuffer(device_->allocator(), &info, &createInfo, &handle_, &allocation_, nullptr));
+	}
+
+	Buffer_T::~Buffer_T()
+	{
+		vmaDestroyBuffer(device_->allocator(), handle_, allocation_);
+	}
+
+	void Buffer_T::uploadLocal(const void* value)
+	{
+		void* ptr = nullptr;
+		vmaMapMemory(device_->allocator(), allocation_, &ptr);
+		memcpy(ptr, value, size_);
+		vmaUnmapMemory(device_->allocator(), allocation_);
+		vmaFlushAllocation(device_->allocator(), allocation_, 0, size_);
+	}
+
+	void Buffer_T::upload(vk::CommandBuffer& cmd, const void* value)
+	{
+		auto staging = std::make_unique<Buffer_T>(device_,size_,VK_BUFFER_USAGE_TRANSFER_SRC_BIT,Type::CPU_ONLY);
+		staging->uploadLocal(value);
+
+		VkBufferCopy copy = {0,0,size_};
+		cmd->copyBuffer(*staging, handle_, copy);
+	}
+
+	void Buffer_T::upload(CommandPool& pool, Queue& queue, const void* value)
+	{
+		auto cmd = pool->createCommandBuffer();
+		cmd->begin();
+		upload(cmd, value);
+		cmd->end();
+		queue->submit(cmd);
+		queue->waitIdle();
+	}
+
+	void* Buffer_T::map()
+	{
+		void* ptr = nullptr;
+		vmaMapMemory(device_->allocator(), allocation_, &ptr);
+		return ptr;
+	}
+	void Buffer_T::unmap()
+	{
+		vmaUnmapMemory(device_->allocator(), allocation_);
+	}
+	void Buffer_T::flush()
+	{
+		vmaFlushAllocation(device_->allocator(), allocation_, 0, VK_WHOLE_SIZE);
+	}
+
+	CommandBuffer_T::CommandBuffer_T(const Device_T* device, const CommandPool_T* pool) : device_(device), pool_(pool) 
+	{
+		VkCommandBufferAllocateInfo info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+		info.commandBufferCount = 1;
+		info.commandPool = pool_->get();
+		info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		VK_CHECK_RESULT(vkAllocateCommandBuffers(*device_, &info, &handle_));
+	}
+	CommandBuffer_T::~CommandBuffer_T() 
+	{ 
+		vkFreeCommandBuffers(*device_, pool_->get(), 1, &handle_); 
 	}
 
 	static shaderc_shader_kind getShadercKind(VkShaderStageFlagBits stage)
@@ -416,7 +539,7 @@ namespace vg::vk
 		return shaderc_shader_kind();
 	}
 
-	void PipelineMaker::shaderGLSL(VkShaderStageFlagBits stage, const std::string& src) {
+	PipelineMaker& PipelineMaker::shaderGLSL(VkShaderStageFlagBits stage, const std::string& src) {
 		shaderc_compiler_t compiler = shaderc_compiler_initialize();
 		auto result = shaderc_compile_into_spv(
 			compiler, src.c_str(), src.size(),
@@ -434,56 +557,8 @@ namespace vg::vk
 
 		shaderc_result_release(result);
 		shaderc_compiler_release(compiler);
-	}
 
-	Buffer_T::Buffer_T(const Device_T* device,VkDeviceSize size,VkBufferUsageFlags usage, Type type) : device_(device),size_(size)
-	{
-		VkBufferCreateInfo info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
-		info.size = size;
-		info.usage = usage;
-
-		VmaAllocationCreateInfo createInfo = {};
-		createInfo.usage = static_cast<VmaMemoryUsage>(type);
-
-		VK_CHECK_RESULT(vmaCreateBuffer(device_->allocator(), &info, &createInfo, &buffer_, &allocation_, nullptr));
-	}
-
-	Buffer_T::~Buffer_T()
-	{
-		vmaDestroyBuffer(device_->allocator(), buffer_, allocation_);
-	}
-
-	void Buffer_T::uploadLocal(const void* value, VkDeviceSize size)
-	{
-		void* ptr = nullptr;
-		vmaMapMemory(device_->allocator(), allocation_, &ptr);
-		memcpy(ptr, value, size);
-		vmaFlushAllocation(device_->allocator(), allocation_, 0, VK_WHOLE_SIZE);
-		vmaUnmapMemory(device_->allocator(), allocation_);
-	}
-
-	void Buffer_T::upload(vk::CommandBuffer& cmd, const void* value, VkDeviceSize size)
-	{
-		auto staging = std::make_unique<Buffer_T>(device_,size,VK_BUFFER_USAGE_TRANSFER_SRC_BIT,Type::CPU_ONLY);
-		staging->uploadLocal(value, size);
-
-		VkBufferCopy copy = {0,0,size};
-		cmd->copyBuffer(*staging, buffer_, copy);
-	}
-
-	void* Buffer_T::map()
-	{
-		void* ptr = nullptr;
-		vmaMapMemory(device_->allocator(), allocation_, &ptr);
-		return ptr;
-	}
-	void Buffer_T::unmap()
-	{
-		vmaUnmapMemory(device_->allocator(), allocation_);
-	}
-	void Buffer_T::flush()
-	{
-		vmaFlushAllocation(device_->allocator(), allocation_, 0, VK_WHOLE_SIZE);
+		return *this;
 	}
 
 } // namespace vg::vk

@@ -9,7 +9,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(Vulkan_DIR "$ENV{VULKAN_SDK}")
 include_directories(${Vulkan_DIR}/Third-Party/Include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/entt)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/VooKoo)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 

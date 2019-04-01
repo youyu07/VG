@@ -15,10 +15,10 @@ set(VG_SOURCE
 
 add_library(vg SHARED ${VG_SOURCE})
 
-add_definitions(-DNOMINMAX)
-add_definitions(-DWIN32_LEAN_AND_MEAN)
-add_definitions(-DVK_USE_PLATFORM_WIN32_KHR)
-add_definitions(-DVKU_SURFACE="VK_KHR_win32_surface")
+if(WIN32)
+	add_definitions(-DNOMINMAX)
+	add_definitions(-DWIN32_LEAN_AND_MEAN)
+endif()
 
 target_include_directories(vg PRIVATE Vulkan::Vulkan ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(vg PRIVATE Vulkan::Vulkan ${Shaderc_DIR}/lib/shaderc_shared.lib)

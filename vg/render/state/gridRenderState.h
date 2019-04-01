@@ -7,21 +7,21 @@ namespace vg
 
 	class GridRenderState
 	{
-		vk::UniquePipelineLayout layout;
-		vk::UniquePipeline pipeline;
-		vku::VertexBuffer vertexBuffer;
+		vk::PipelineLayout layout;
+		vk::Pipeline pipeline;
+		vk::Buffer vertexBuffer;
 		uint32_t mainLineCount = 0;
 		uint32_t lineCount = 0;
 	public:
 		GridRenderState() {}
 
-		GridRenderState(const Context& ctx, vk::RenderPass renderPass,vk::DescriptorSetLayout cameraSetLayout)
+		GridRenderState(const Context& ctx,vk::DescriptorSetLayout& cameraSetLayout)
 		{
-			auto plm = vku::PipelineLayoutMaker();
-			plm.descriptorSetLayout(cameraSetLayout);
-			layout = plm.createUnique(ctx);
+			auto plm = vk::PipelineLayoutMaker();
+			plm.setLayout(cameraSetLayout);
+			layout = plm.create(ctx->getDevice());
 
-			setupPipeline(ctx, renderPass);
+			setupPipeline(ctx);
 			setupResource(ctx);
 		}
 
@@ -47,11 +47,11 @@ namespace vg
 			}
 			lineCount = static_cast<uint32_t>(position.size());
 
-			vertexBuffer = vku::VertexBuffer(ctx, ctx.getMemoryProperties(), sizeof(position));
-			vertexBuffer.upload(ctx, ctx.getMemoryProperties(), ctx.getCommandPool(), ctx.getGraphicsQueue(), position);
+			vertexBuffer = ctx->getDevice()->createVertexBuffer(sizeof(glm::vec2) * position.size());
+			vertexBuffer->upload(ctx->getCommandPool(),ctx->getGraphicsQueue(),position.data());
 		}
 
-		void setupPipeline(const Context& ctx, vk::RenderPass renderPass)
+		void setupPipeline(const Context& ctx)
 		{
 			const std::string vert =
 				"#version 450 core\n"
@@ -80,37 +80,33 @@ namespace vg
 				"	fColor = vec4(0.3,0.7,0.4,1.0);\n"
 				"}\n";
 
-			auto vertShader = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eVertex, vert);
-			auto fragShader = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eFragment, frag);
-			auto pm = vku::PipelineMaker{ ctx.getExtent().width,ctx.getExtent().height };
-			pm.shader(vk::ShaderStageFlagBits::eVertex, vertShader);
-			pm.shader(vk::ShaderStageFlagBits::eFragment, fragShader);
+			auto pm = vk::PipelineMaker(ctx->getDevice()).defaultBlend(VK_FALSE);
+			pm.shaderGLSL(VK_SHADER_STAGE_VERTEX_BIT, vert);
+			pm.shaderGLSL(VK_SHADER_STAGE_FRAGMENT_BIT, frag);
 			pm.vertexBinding(0, sizeof(glm::vec2));
-			pm.vertexAttribute(0, 0, vk::Format::eR32G32Sfloat, 0);
-			pm.topology(vk::PrimitiveTopology::eLineList);
+			pm.vertexAttribute(0, 0, VK_FORMAT_R32G32_SFLOAT, 0);
+			pm.dynamicState(VK_DYNAMIC_STATE_VIEWPORT);
+			pm.dynamicState(VK_DYNAMIC_STATE_SCISSOR);
+			pm.dynamicState(VK_DYNAMIC_STATE_LINE_WIDTH);
 			pm.depthTestEnable(VK_TRUE);
 			pm.depthWriteEnable(VK_TRUE);
-			pm.lineWidth(1.0f);
-			pm.dynamicState(vk::DynamicState::eLineWidth);
-			pm.dynamicState(vk::DynamicState::eViewport);
-			pm.dynamicState(vk::DynamicState::eScissor);
-			pm.rasterizationSamples(Context::getSample());
-			pipeline = pm.createUnique(ctx,vk::PipelineCache(),layout.get(),renderPass);
+			pm.topology(VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
+			pm.rasterizationSamples(ctx->getSampleCount());
+			pipeline = pm.create(layout, ctx->getRenderPass());
 		}
 
-		void draw(const Context& ctx, vk::CommandBuffer cmd, vk::DescriptorSet cameraSet)
+		void draw(const Context& ctx, vk::CommandBuffer& cmd, vk::DescriptorSet& cameraSet)
 		{
-			vk::DeviceSize offset = { 0 };
-
-			cmd.bindVertexBuffers(0, vertexBuffer.buffer(), offset);
-			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.get());
+			VkDeviceSize offset = { 0 };
+			cmd->bindVertexBuffer(0, vertexBuffer->get(), offset);
+			cmd->bindPipeline(pipeline);
 			uint32_t setOffset = { 0 };
-			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout.get(), 0, cameraSet, setOffset);
+			cmd->bindDescriptorSet(layout, 0, cameraSet->get(), setOffset);
 
-			cmd.setLineWidth(3.0f);
-			cmd.draw(mainLineCount, 1, 0, 0);
-			cmd.setLineWidth(1.0f);
-			cmd.draw(lineCount - mainLineCount, 1, mainLineCount, 0);
+			cmd->lineWidth(3.0f);
+			cmd->draw(mainLineCount, 1);
+			cmd->lineWidth(1.0f);
+			cmd->draw(lineCount - mainLineCount, 1, mainLineCount);
 		}
 	};
 
