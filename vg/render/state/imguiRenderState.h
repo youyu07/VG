@@ -7,25 +7,26 @@ namespace vg
 {
 	class ImguiRenderState
 	{
-		vk::UniqueSampler sampler;
+		vk::Sampler sampler;
+		vk::Image tex;
+		vk::DescriptorSetLayout setLayout;
+		vk::PipelineLayout layout;
 
-		vk::UniqueDescriptorSetLayout setLayout;
-		vk::UniquePipelineLayout layout;
-		vk::UniquePipeline pipeline;
+		vk::Pipeline pipeline;
 
 		vku::TextureImage2D tex;
-		vk::UniqueDescriptorSet descriptorSet;
+		vk::DescriptorSet descriptorSet;
 
-		vku::GenericBuffer vertexBuffer;
-		vku::GenericBuffer indexBuffer;
+		vk::Buffer vertexBuffer;
+		vk::Buffer indexBuffer;
 	public:
 		ImguiRenderState() {}
 
 		ImguiRenderState(const Context& ctx, vk::RenderPass renderPass)
 		{
 			{
-				vku::SamplerMaker sm{};
-				sampler = sm.createUnique(ctx.getDevice());
+				vk::SamplerMaker sm;
+				sampler = sm.create(ctx->getDevice());
 			}
 
 			{
@@ -36,44 +37,40 @@ namespace vg
 				io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
 				size_t upload_size = width * height * 4 * sizeof(char);
 
-				tex = vku::TextureImage2D{ ctx.getDevice(),ctx.getMemoryProperties(),static_cast<uint32_t>(width),static_cast<uint32_t>(height) };
-				tex.upload(ctx.getDevice(), std::vector<uint8_t>(pixels, pixels + upload_size), ctx.getCommandPool(), ctx.getMemoryProperties(), ctx.getGraphicsQueue());
-
-				// Store our identifier
+				tex = ctx->getDevice()->createTexture2D(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+				tex->upload(ctx->getCommandPool(), ctx->getGraphicsQueue(), pixels);
 				io.Fonts->TexID = (ImTextureID)(intptr_t)&tex;
 			}
 			
 			{
-				vku::DescriptorSetLayoutMaker dsm;
-				dsm.image(0, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment, 1);
-				setLayout = dsm.createUnique(ctx.getDevice());
+				vk::DescriptorSetLayoutMaker dsm;
+				dsm.binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT);
+				setLayout = dsm.create(ctx->getDevice());
 			}
 			{
-				vku::PipelineLayoutMaker plm{};
-				plm.descriptorSetLayout(setLayout.get());
-				plm.pushConstantRange(vk::ShaderStageFlagBits::eVertex, 0, 16);
-				layout = plm.createUnique(ctx.getDevice());
+				vk::PipelineLayoutMaker plm;
+				plm.pushConstant(VK_SHADER_STAGE_VERTEX_BIT, 0, 16);
+				plm.setLayout(*setLayout);
+				layout = plm.create(ctx->getDevice());
 			}
 
 			{
-				vku::DescriptorSetMaker dsm;
-				dsm.layout(setLayout.get());
-				descriptorSet = std::move(dsm.createUnique(ctx.getDevice(), ctx.getDescriptorPool()).at(0));
+				std::array<VkDescriptorSetLayout, 1> sets = { *setLayout };
+				descriptorSet = ctx->getDescriptorPool()->createDescriptorSet(sets);
 
-				vku::DescriptorSetUpdater update;
-				update.beginDescriptorSet(descriptorSet.get());
+				vk::DescriptorSetUpdater update;
+				update.beginDescriptorSet(*descriptorSet);
 
-				// Set initial sampler value
-				update.beginImages(0, 0, vk::DescriptorType::eCombinedImageSampler);
-				update.image(sampler.get(), tex.imageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+				update.beginImages(0, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+				update.image(*sampler, tex->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-				update.update(ctx.getDevice());
+				update.update(ctx->getDevice());
 			}
 
 			setupPipeline(ctx, renderPass);
 		}
 
-		void setupPipeline(const Context& ctx, vk::RenderPass renderPass)
+		void setupPipeline(const Context& ctx, const vk::RenderPass& renderPass)
 		{
 			const std::string vert =
 				"#version 450 core\n"
@@ -119,20 +116,18 @@ namespace vg
 				"}\n";
 
 			{
-				auto vertShader = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eVertex, vert);
-				auto fragShader = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eFragment, frag);
-				auto pm = vku::PipelineMaker{ ctx.getExtent().width,ctx.getExtent().height };
-				pm.shader(vk::ShaderStageFlagBits::eVertex, vertShader);
-				pm.shader(vk::ShaderStageFlagBits::eFragment, fragShader);
-				pm.vertexBinding(0,sizeof(float)*5);
-				pm.vertexAttribute(0, 0, vk::Format::eR32G32Sfloat,0);
-				pm.vertexAttribute(1, 0, vk::Format::eR32G32Sfloat, sizeof(float) * 2);
-				pm.vertexAttribute(2, 0, vk::Format::eR8G8B8A8Unorm, sizeof(float) * 4);
-				pm.dynamicState(vk::DynamicState::eScissor);
-				pm.dynamicState(vk::DynamicState::eViewport);
+				auto pm = vk::PipelineMaker(ctx->getDevice());
+				pm.shaderGLSL(VK_SHADER_STAGE_VERTEX_BIT, vert);
+				pm.shaderGLSL(VK_SHADER_STAGE_FRAGMENT_BIT, frag);
+				pm.vertexBinding(0, sizeof(float) * 5);
+				pm.vertexAttribute(0, 0, VK_FORMAT_R32G32_SFLOAT, 0);
+				pm.vertexAttribute(1, 0, VK_FORMAT_R32G32_SFLOAT, sizeof(float) * 2);
+				pm.vertexAttribute(2, 0, VK_FORMAT_R8G8B8A8_UNORM, sizeof(float) * 4);
+				pm.dynamicState(VK_DYNAMIC_STATE_VIEWPORT);
+				pm.dynamicState(VK_DYNAMIC_STATE_SCISSOR);
 				pm.blendBegin(VK_TRUE);
-				pm.rasterizationSamples(Context::getSample());
-				pipeline = pm.createUnique(ctx.getDevice(), vk::PipelineCache(), layout.get(), renderPass);
+				pm.rasterizationSamples(ctx->getSampleCount());
+				pipeline = pm.create(*layout, *renderPass);
 			}
 		}
 
@@ -141,17 +136,13 @@ namespace vg
 			// Create the Vertex and Index buffers:
 			uint32_t vertex_size = data->TotalVtxCount * sizeof(ImDrawVert);
 			uint32_t index_size = data->TotalIdxCount * sizeof(ImDrawIdx);
-			if (vertexBuffer.size() < vertex_size)
+			if (vertexBuffer->size() < vertex_size)
 			{
-				vertexBuffer = vku::GenericBuffer(ctx, ctx.getMemoryProperties(),
-					vk::BufferUsageFlagBits::eVertexBuffer,vertex_size,
-					vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+				vertexBuffer = ctx->getDevice()->createVertexBuffer(vertex_size, VK_TRUE);
 			}
-			if (indexBuffer.size() < index_size)
+			if (indexBuffer->size() < index_size)
 			{
-				indexBuffer = vku::GenericBuffer(ctx, ctx.getMemoryProperties(),
-					vk::BufferUsageFlagBits::eIndexBuffer, index_size,
-					vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+				indexBuffer = ctx->getDevice()->createIndexBuffer(index_size, VK_TRUE);
 			}
 
 			// Upload Vertex and index Data:
@@ -159,8 +150,8 @@ namespace vg
 				uint32_t vertexOffset = 0;
 				uint32_t indexOffset = 0;
 				
-				auto vp = (char*)vertexBuffer.map(ctx);
-				auto ip = (char*)indexBuffer.map(ctx);
+				auto vp = (char*)vertexBuffer->map();
+				auto ip = (char*)indexBuffer->map();
 				for (int n = 0; n < data->CmdListsCount; n++)
 				{
 					const ImDrawList* cmd_list = data->CmdLists[n];
@@ -173,14 +164,14 @@ namespace vg
 					vertexOffset += vs;
 					indexOffset += is;
 				}
-				vertexBuffer.unmap(ctx);
-				indexBuffer.unmap(ctx);
-				vertexBuffer.flush(ctx);
-				indexBuffer.flush(ctx);
+				vertexBuffer->unmap();
+				indexBuffer->unmap();
+				vertexBuffer->flush();
+				indexBuffer->flush();
 			}
 		}
 
-		void draw(const Context& ctx, vk::CommandBuffer cmd)
+		void draw(const Context& ctx, vk::CommandBuffer& cmd)
 		{
 			auto data = ImGui::GetDrawData();
 			int width = (int)(data->DisplaySize.x * data->FramebufferScale.x);
@@ -188,19 +179,19 @@ namespace vg
 
 			if (width >0 && height > 0 && data->TotalVtxCount > 0) {
 				createOrResizeBuffer(ctx,data);
-				cmd.bindPipeline(vk::PipelineBindPoint::eGraphics,pipeline.get());
+				cmd->bindPipeline(pipeline);
 
 				std::vector<VkDeviceSize> offsets = { 0 };
-				cmd.bindVertexBuffers(0, vertexBuffer.buffer(), offsets);
-				cmd.bindIndexBuffer(indexBuffer.buffer(), 0, vk::IndexType::eUint16);
-				cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout.get(), 0, descriptorSet.get(), {});
+				cmd->bindVertexBuffer(0, vertexBuffer->get(), offsets);
+				cmd->bindIndexBuffer(indexBuffer->get(), 0);
+				cmd->bindDescriptorSet(layout, 0, descriptorSet->get());
 
 				std::vector<float> pushData(4);
 				pushData[0] = 2.0f / data->DisplaySize.x;
 				pushData[1] = 2.0f / data->DisplaySize.y;
 				pushData[2] = -1.0f - data->DisplayPos.x * pushData[0];
 				pushData[3] = -1.0f - data->DisplayPos.y * pushData[1];
-				cmd.pushConstants(layout.get(), vk::ShaderStageFlagBits::eVertex, 0U, static_cast<uint32_t>(sizeof(float)*4),pushData.data());
+				cmd->pushContants(layout, VK_SHADER_STAGE_VERTEX_BIT, 0, static_cast<uint32_t>(sizeof(float) * 4), pushData.data());
 
 				// Will project scissor/clipping rectangles into framebuffer space
 				ImVec2 clip_off = data->DisplayPos;         // (0,0) unless using multi-viewports

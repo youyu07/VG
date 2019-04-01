@@ -30,6 +30,20 @@ namespace vg::vk
 		VK_CHECK_RESULT(vmaCreateAllocator(&allocatorInfo, &allocator_));
 	}
 
+	Buffer Device_T::createUniformBuffer(VkDeviceSize size, VkBool32 dynamic)
+	{
+		return std::make_unique<Buffer_T>(this, size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, dynamic ? Buffer_T::Type::CPU_TO_GPU : Buffer_T::Type::GPU_ONLY);
+	}
+
+	Buffer Device_T::createVertexBuffer(VkDeviceSize size, VkBool32 dynamic = false)
+	{
+		return std::make_unique<Buffer_T>(this, size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, dynamic ? Buffer_T::Type::CPU_TO_GPU : Buffer_T::Type::GPU_ONLY);
+	}
+	Buffer Device_T::createIndexBuffer(VkDeviceSize size, VkBool32 dynamic = false)
+	{
+		return std::make_unique<Buffer_T>(this, size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, dynamic ? Buffer_T::Type::CPU_TO_GPU : Buffer_T::Type::GPU_ONLY);
+	}
+
 	static VkImageAspectFlags getAspect(VkFormat format) {
 		switch (format)
 		{
@@ -44,6 +58,161 @@ namespace vg::vk
 			break;
 		}
 		return VK_IMAGE_ASPECT_COLOR_BIT;
+	}
+
+	struct BlockParams {
+		uint8_t blockWidth;
+		uint8_t blockHeight;
+		uint8_t bytesPerBlock;
+	};
+
+	/// Get the details of vulkan texture formats.
+	static BlockParams getBlockParams(VkFormat format) {
+		switch (format) {
+		case VK_FORMAT_R4G4_UNORM_PACK8:return BlockParams{ 1, 1, 1 };
+		case VK_FORMAT_R4G4B4A4_UNORM_PACK16:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_B4G4R4A4_UNORM_PACK16:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_R5G6B5_UNORM_PACK16:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_B5G6R5_UNORM_PACK16:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_R5G5B5A1_UNORM_PACK16:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_B5G5R5A1_UNORM_PACK16:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_A1R5G5B5_UNORM_PACK16:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_R8_UNORM:return BlockParams{ 1, 1, 1 };
+		case VK_FORMAT_R8_SNORM:return BlockParams{ 1, 1, 1 };
+		case VK_FORMAT_R8_USCALED:return BlockParams{ 1, 1, 1 };
+		case VK_FORMAT_R8_SSCALED:return BlockParams{ 1, 1, 1 };
+		case VK_FORMAT_R8_UINT:return BlockParams{ 1, 1, 1 };
+		case VK_FORMAT_R8_SINT:return BlockParams{ 1, 1, 1 };
+		case VK_FORMAT_R8_SRGB:return BlockParams{ 1, 1, 1 };
+		case VK_FORMAT_R8G8_UNORM:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_R8G8_SNORM:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_R8G8_USCALED:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_R8G8_SSCALED:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_R8G8_UINT:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_R8G8_SINT:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_R8G8_SRGB:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_R8G8B8_UNORM:return BlockParams{ 1, 1, 3 };
+		case VK_FORMAT_R8G8B8_SNORM:return BlockParams{ 1, 1, 3 };
+		case VK_FORMAT_R8G8B8_USCALED:return BlockParams{ 1, 1, 3 };
+		case VK_FORMAT_R8G8B8_SSCALED:return BlockParams{ 1, 1, 3 };
+		case VK_FORMAT_R8G8B8_UINT:return BlockParams{ 1, 1, 3 };
+		case VK_FORMAT_R8G8B8_SINT:return BlockParams{ 1, 1, 3 };
+		case VK_FORMAT_R8G8B8_SRGB:return BlockParams{ 1, 1, 3 };
+		case VK_FORMAT_B8G8R8_UNORM:return BlockParams{ 1, 1, 3 };
+		case VK_FORMAT_B8G8R8_SNORM:return BlockParams{ 1, 1, 3 };
+		case VK_FORMAT_B8G8R8_USCALED:return BlockParams{ 1, 1, 3 };
+		case VK_FORMAT_B8G8R8_SSCALED:return BlockParams{ 1, 1, 3 };
+		case VK_FORMAT_B8G8R8_UINT:return BlockParams{ 1, 1, 3 };
+		case VK_FORMAT_B8G8R8_SINT:return BlockParams{ 1, 1, 3 };
+		case VK_FORMAT_B8G8R8_SRGB:return BlockParams{ 1, 1, 3 };
+		case VK_FORMAT_R8G8B8A8_UNORM:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_R8G8B8A8_SNORM:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_R8G8B8A8_USCALED:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_R8G8B8A8_SSCALED:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_R8G8B8A8_UINT:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_R8G8B8A8_SINT:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_R8G8B8A8_SRGB:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_B8G8R8A8_UNORM:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_B8G8R8A8_SNORM:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_B8G8R8A8_USCALED:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_B8G8R8A8_SSCALED:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_B8G8R8A8_UINT:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_B8G8R8A8_SINT:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_B8G8R8A8_SRGB:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A8B8G8R8_UNORM_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A8B8G8R8_SNORM_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A8B8G8R8_USCALED_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A8B8G8R8_SSCALED_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A8B8G8R8_UINT_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A8B8G8R8_SINT_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A8B8G8R8_SRGB_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A2R10G10B10_UNORM_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A2R10G10B10_SNORM_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A2R10G10B10_USCALED_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A2R10G10B10_SSCALED_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A2R10G10B10_UINT_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A2R10G10B10_SINT_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A2B10G10R10_UNORM_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A2B10G10R10_SNORM_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A2B10G10R10_USCALED_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A2B10G10R10_SSCALED_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A2B10G10R10_UINT_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_A2B10G10R10_SINT_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_R16_UNORM:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_R16_SNORM:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_R16_USCALED:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_R16_SSCALED:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_R16_UINT:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_R16_SINT:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_R16_SFLOAT:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_R16G16_UNORM:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_R16G16_SNORM:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_R16G16_USCALED:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_R16G16_SSCALED:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_R16G16_UINT:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_R16G16_SINT:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_R16G16_SFLOAT:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_R16G16B16_UNORM:return BlockParams{ 1, 1, 6 };
+		case VK_FORMAT_R16G16B16_SNORM:return BlockParams{ 1, 1, 6 };
+		case VK_FORMAT_R16G16B16_USCALED:return BlockParams{ 1, 1, 6 };
+		case VK_FORMAT_R16G16B16_SSCALED:return BlockParams{ 1, 1, 6 };
+		case VK_FORMAT_R16G16B16_UINT:return BlockParams{ 1, 1, 6 };
+		case VK_FORMAT_R16G16B16_SINT:return BlockParams{ 1, 1, 6 };
+		case VK_FORMAT_R16G16B16_SFLOAT:return BlockParams{ 1, 1, 6 };
+		case VK_FORMAT_R16G16B16A16_UNORM:return BlockParams{ 1, 1, 8 };
+		case VK_FORMAT_R16G16B16A16_SNORM:return BlockParams{ 1, 1, 8 };
+		case VK_FORMAT_R16G16B16A16_USCALED:return BlockParams{ 1, 1, 8 };
+		case VK_FORMAT_R16G16B16A16_SSCALED:return BlockParams{ 1, 1, 8 };
+		case VK_FORMAT_R16G16B16A16_UINT:return BlockParams{ 1, 1, 8 };
+		case VK_FORMAT_R16G16B16A16_SINT:return BlockParams{ 1, 1, 8 };
+		case VK_FORMAT_R16G16B16A16_SFLOAT:return BlockParams{ 1, 1, 8 };
+		case VK_FORMAT_R32_UINT:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_R32_SINT:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_R32_SFLOAT:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_R32G32_UINT:return BlockParams{ 1, 1, 8 };
+		case VK_FORMAT_R32G32_SINT:return BlockParams{ 1, 1, 8 };
+		case VK_FORMAT_R32G32_SFLOAT:return BlockParams{ 1, 1, 8 };
+		case VK_FORMAT_R32G32B32_UINT:return BlockParams{ 1, 1, 12 };
+		case VK_FORMAT_R32G32B32_SINT:return BlockParams{ 1, 1, 12 };
+		case VK_FORMAT_R32G32B32_SFLOAT:return BlockParams{ 1, 1, 12 };
+		case VK_FORMAT_R32G32B32A32_UINT:return BlockParams{ 1, 1, 16 };
+		case VK_FORMAT_R32G32B32A32_SINT:return BlockParams{ 1, 1, 16 };
+		case VK_FORMAT_R32G32B32A32_SFLOAT:return BlockParams{ 1, 1, 16 };
+		case VK_FORMAT_R64_UINT:return BlockParams{ 1, 1, 8 };
+		case VK_FORMAT_R64_SINT:return BlockParams{ 1, 1, 8 };
+		case VK_FORMAT_R64_SFLOAT:return BlockParams{ 1, 1, 8 };
+		case VK_FORMAT_R64G64_UINT:return BlockParams{ 1, 1, 16 };
+		case VK_FORMAT_R64G64_SINT:return BlockParams{ 1, 1, 16 };
+		case VK_FORMAT_R64G64_SFLOAT:return BlockParams{ 1, 1, 16 };
+		case VK_FORMAT_R64G64B64_UINT:return BlockParams{ 1, 1, 24 };
+		case VK_FORMAT_R64G64B64_SINT:return BlockParams{ 1, 1, 24 };
+		case VK_FORMAT_R64G64B64_SFLOAT:return BlockParams{ 1, 1, 24 };
+		case VK_FORMAT_R64G64B64A64_UINT:return BlockParams{ 1, 1, 32 };
+		case VK_FORMAT_R64G64B64A64_SINT:return BlockParams{ 1, 1, 32 };
+		case VK_FORMAT_R64G64B64A64_SFLOAT:return BlockParams{ 1, 1, 32 };
+		case VK_FORMAT_B10G11R11_UFLOAT_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_E5B9G9R9_UFLOAT_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_D16_UNORM:return BlockParams{ 1, 1, 2 };
+		case VK_FORMAT_X8_D24_UNORM_PACK32:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_D32_SFLOAT:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_S8_UINT:return BlockParams{ 1, 1, 1 };
+		case VK_FORMAT_D16_UNORM_S8_UINT:return BlockParams{ 1, 1, 3 };
+		case VK_FORMAT_D24_UNORM_S8_UINT:return BlockParams{ 1, 1, 4 };
+		case VK_FORMAT_D32_SFLOAT_S8_UINT:return BlockParams{ 1, 1, 5 };
+		case VK_FORMAT_BC1_RGB_UNORM_BLOCK:return BlockParams{ 4, 4, 8 };
+		case VK_FORMAT_BC1_RGB_SRGB_BLOCK:return BlockParams{ 4, 4, 8 };
+		case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:return BlockParams{ 4, 4, 8 };
+		case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:return BlockParams{ 4, 4, 8 };
+		case VK_FORMAT_BC2_UNORM_BLOCK:return BlockParams{ 4, 4, 16 };
+		case VK_FORMAT_BC2_SRGB_BLOCK:return BlockParams{ 4, 4, 16 };
+		case VK_FORMAT_BC3_UNORM_BLOCK:return BlockParams{ 4, 4, 16 };
+		case VK_FORMAT_BC3_SRGB_BLOCK:return BlockParams{ 4, 4, 16 };
+		case VK_FORMAT_BC4_UNORM_BLOCK:return BlockParams{ 4, 4, 16 };
+		case VK_FORMAT_BC4_SNORM_BLOCK:return BlockParams{ 4, 4, 16 };
+		case VK_FORMAT_BC5_UNORM_BLOCK:return BlockParams{ 4, 4, 16 };
+		case VK_FORMAT_BC5_SNORM_BLOCK:return BlockParams{ 4, 4, 16 };
+		}
+		return BlockParams{ 0, 0, 0 };
 	}
 
 	Image_T::Image_T(const Device_T* device, VkImageCreateInfo& info, VkImageViewType viewType) : device_(device), info_(info) {
@@ -70,6 +239,18 @@ namespace vg::vk
 		if (image_ && allocation_) {
 			vmaDestroyImage(device_->allocator(), image_, allocation_);
 		}
+	}
+
+	void Image_T::upload(CommandBuffer& cmd, const void* value)
+	{
+		auto size = getBlockParams(info_.format).bytesPerBlock * info_.extent.width * info_.extent.height;
+		auto staging = std::make_unique<Buffer_T>(device_, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Buffer_T::Type::CPU_ONLY);
+		staging->uploadLocal(value, size);
+
+		VkBufferImageCopy region = {};
+		region.imageExtent = info_.extent;
+		region.imageSubresource = { getAspect(info_.format),0,0,1 };
+		cmd->copyBufferToImage(*staging, image_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, region);
 	}
 
 	Image Device_T::createTexture2D(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format)
@@ -174,7 +355,7 @@ namespace vg::vk
 	}
 
 
-	Swapchain_T::Swapchain_T(const Device_T* device, const Surface& surface) : device_(device),surface_(surface.get())
+	Swapchain_T::Swapchain_T(const Device_T* device, const Surface_T* surface) : device_(device),surface_(surface)
 	{
 		auto formats = device_->getSurfaceFormat(*surface);
 		VkSurfaceFormatKHR surfaceFormat = {VK_FORMAT_B8G8R8A8_UNORM,VK_COLORSPACE_SRGB_NONLINEAR_KHR};
@@ -253,6 +434,56 @@ namespace vg::vk
 
 		shaderc_result_release(result);
 		shaderc_compiler_release(compiler);
+	}
+
+	Buffer_T::Buffer_T(const Device_T* device,VkDeviceSize size,VkBufferUsageFlags usage, Type type) : device_(device),size_(size)
+	{
+		VkBufferCreateInfo info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+		info.size = size;
+		info.usage = usage;
+
+		VmaAllocationCreateInfo createInfo = {};
+		createInfo.usage = static_cast<VmaMemoryUsage>(type);
+
+		VK_CHECK_RESULT(vmaCreateBuffer(device_->allocator(), &info, &createInfo, &buffer_, &allocation_, nullptr));
+	}
+
+	Buffer_T::~Buffer_T()
+	{
+		vmaDestroyBuffer(device_->allocator(), buffer_, allocation_);
+	}
+
+	void Buffer_T::uploadLocal(const void* value, VkDeviceSize size)
+	{
+		void* ptr = nullptr;
+		vmaMapMemory(device_->allocator(), allocation_, &ptr);
+		memcpy(ptr, value, size);
+		vmaFlushAllocation(device_->allocator(), allocation_, 0, VK_WHOLE_SIZE);
+		vmaUnmapMemory(device_->allocator(), allocation_);
+	}
+
+	void Buffer_T::upload(vk::CommandBuffer& cmd, const void* value, VkDeviceSize size)
+	{
+		auto staging = std::make_unique<Buffer_T>(device_,size,VK_BUFFER_USAGE_TRANSFER_SRC_BIT,Type::CPU_ONLY);
+		staging->uploadLocal(value, size);
+
+		VkBufferCopy copy = {0,0,size};
+		cmd->copyBuffer(*staging, buffer_, copy);
+	}
+
+	void* Buffer_T::map()
+	{
+		void* ptr = nullptr;
+		vmaMapMemory(device_->allocator(), allocation_, &ptr);
+		return ptr;
+	}
+	void Buffer_T::unmap()
+	{
+		vmaUnmapMemory(device_->allocator(), allocation_);
+	}
+	void Buffer_T::flush()
+	{
+		vmaFlushAllocation(device_->allocator(), allocation_, 0, VK_WHOLE_SIZE);
 	}
 
 } // namespace vg::vk

@@ -52,6 +52,10 @@ namespace vg::vk
 	using Semaphore = std::unique_ptr<Semaphore_T>;
 	class Queue_T;
 	using Queue = std::unique_ptr<Queue_T>;
+	class Buffer_T;
+	using Buffer = std::unique_ptr<Buffer_T>;
+	class Sampler_T;
+	using Sampler = std::unique_ptr<Sampler_T>;
 
 #define VK_CHECK_RESULT(result) assert(VK_SUCCESS == result);
 
@@ -127,13 +131,6 @@ namespace vg::vk
 		operator VkDevice() const { return device_; }
 		operator VkPhysicalDevice() const { return physicalDevice_; }
 
-		VkBool32 getSurfaceSupport(uint32_t familyIndex, VkSurfaceKHR surface) const
-		{
-			VkBool32 support;
-			VK_CHECK_RESULT(vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice_, familyIndex, surface, &support));
-			return support;
-		}
-
 		std::vector<VkSurfaceFormatKHR> getSurfaceFormat(VkSurfaceKHR surface) const
 		{
 			uint32_t count = 0;
@@ -204,6 +201,10 @@ namespace vg::vk
 		Image createTexture2D(uint32_t width, uint32_t height, uint32_t mipLevels = 1, VkFormat format = VK_FORMAT_R8G8B8A8_UNORM);
 		Image createDepthStencilAttachment(uint32_t width, uint32_t height, VkSampleCountFlagBits sample = VK_SAMPLE_COUNT_1_BIT, VkFormat format = VK_FORMAT_D24_UNORM_S8_UINT);
 		Image createColorAttachment(uint32_t width, uint32_t height, VkSampleCountFlagBits sample = VK_SAMPLE_COUNT_1_BIT, VkFormat format = VK_FORMAT_B8G8R8A8_UNORM);
+
+		Buffer createUniformBuffer(VkDeviceSize size, VkBool32 dynamic = false);
+		Buffer createVertexBuffer(VkDeviceSize size, VkBool32 dynamic = false);
+		Buffer createIndexBuffer(VkDeviceSize size, VkBool32 dynamic = false);
 	private:
 		VkPhysicalDevice physicalDevice_;
 		VkDevice device_;
@@ -316,6 +317,39 @@ namespace vg::vk
 		void endRenderPass() {
 			vkCmdEndRenderPass(commandBuffer_);
 		}
+
+		void bindPipeline(const Pipeline& pipeline,VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS)
+		{
+			vkCmdBindPipeline(commandBuffer_, bindPoint, *pipeline);
+		}
+
+		void bindVertexBuffer(uint32_t first,ArrayProxy<const VkBuffer> buffer,ArrayProxy<const VkDeviceSize> offset) {
+			vkCmdBindVertexBuffers(commandBuffer_, 0, buffer.size(), buffer.data(), offset.data());
+		}
+
+		void bindIndexBuffer(VkBuffer buffer,uint32_t offset = 0,VkIndexType indexType = VK_INDEX_TYPE_UINT16) {
+			vkCmdBindIndexBuffer(commandBuffer_, buffer, offset, indexType);
+		}
+
+		void bindDescriptorSet(PipelineLayout& layout,uint32_t first,ArrayProxy<const VkDescriptorSet> sets, ArrayProxy<uint32_t> offset = nullptr, VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS) {
+			vkCmdBindDescriptorSets(commandBuffer_, bindPoint, *layout, first, sets.size(), sets.data(), offset.size(), offset.data());
+		}
+
+		void pushContants(PipelineLayout& layout,VkShaderStageFlags stage,uint32_t offset,uint32_t size,const void* value) {
+			vkCmdPushConstants(commandBuffer_, *layout, stage, offset, size, value);
+		}
+
+		template<typename T> void pushContants(PipelineLayout& layout, VkShaderStageFlags stage, uint32_t offset, const T& value) {
+			vkCmdPushConstants(commandBuffer_, *layout, stage, offset, sizeof(T), &value);
+		}
+
+		void copyBuffer(VkBuffer src,VkBuffer dst,ArrayProxy<const VkBufferCopy> region) {
+			vkCmdCopyBuffer(commandBuffer_, src, dst, region.size(), region.data());
+		}
+
+		void copyBufferToImage(VkBuffer src, VkImage dst,VkImageLayout layout, ArrayProxy<const VkBufferImageCopy> region) {
+			vkCmdCopyBufferToImage(commandBuffer_, src, dst, layout, region.size(), region.data());
+		}
 	private:
 		const Device_T* device_;
 		const CommandPool_T* pool_;
@@ -333,6 +367,16 @@ namespace vg::vk
 
 		void setLayout(CommandBuffer_T* cmd, VkImageLayout newLayout);
 
+		void upload(CommandBuffer& cmd, const void* value);
+
+		void upload(CommandPool& pool, Queue& queue, const void* value) {
+			auto cmd = pool->createCommandBuffer();
+			cmd->begin();
+			upload(cmd, value);
+			cmd->end();
+			queue->submit(cmd);
+			queue->waitIdle();
+		}
 	private:
 		void setupView(VkImageViewType viewType);
 
@@ -347,7 +391,7 @@ namespace vg::vk
 	class Swapchain_T
 	{
 	public:
-		Swapchain_T(const Device_T* device, const Surface& surface);
+		Swapchain_T(const Device_T* device, const Surface_T* surface);
 		~Swapchain_T() {
 			images_.swap(std::vector<Image>());
 			vkDestroySwapchainKHR(*device_, swapchain_, nullptr);
@@ -364,7 +408,7 @@ namespace vg::vk
 	private:
 		const Device_T* device_;
 		const Surface_T* surface_;
-		VkSwapchainKHR swapchain_;
+		VkSwapchainKHR swapchain_ = VK_NULL_HANDLE;
 		VkExtent2D extent = {};
 		std::vector<Image> images_;
 		VkFormat colorFormat;
@@ -411,6 +455,8 @@ namespace vg::vk
 		}
 		~DescriptorSet_T() { vkFreeDescriptorSets(*device_, *pool_,1, &set_); }
 		operator VkDescriptorSet() const { return set_; }
+
+		VkDescriptorSet get() const { return set_; }
 	private:
 		const Device_T* device_;
 		const DescriptorPool_T* pool_;
@@ -489,7 +535,7 @@ namespace vg::vk
 	public:
 		Queue_T(VkQueue queue) : queue_(queue) {}
 
-		void submit(ArrayProxy<const VkCommandBuffer> cmds, ArrayProxy<const VkSemaphore> wait, ArrayProxy<const VkSemaphore> signal,VkFence fence = VkFence(),VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT) {
+		void submit(ArrayProxy<const VkCommandBuffer> cmds, ArrayProxy<const VkSemaphore> wait = nullptr, ArrayProxy<const VkSemaphore> signal = nullptr,VkFence fence = VkFence(),VkPipelineStageFlags waitStage = 0) {
 			VkSubmitInfo info = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
 			info.commandBufferCount = cmds.size();
 			info.pCommandBuffers = cmds.data();
@@ -499,6 +545,10 @@ namespace vg::vk
 			info.pSignalSemaphores = signal.data();
 			info.pWaitDstStageMask = &waitStage;
 			VK_CHECK_RESULT(vkQueueSubmit(queue_, 1, &info, fence));
+		}
+
+		void submit(CommandBuffer& cmd) {
+			submit(VkCommandBuffer(*cmd));
 		}
 
 		VkResult present(ArrayProxy<const VkSwapchainKHR> swapchain,uint32_t* imageIndex, ArrayProxy<const VkSemaphore> wait) {
@@ -511,10 +561,59 @@ namespace vg::vk
 			return vkQueuePresentKHR(queue_, &info);
 		}
 
+		void waitIdle() { vkQueueWaitIdle(queue_); }
+
 		Queue clone() const { return std::make_unique<Queue_T>(queue_); }
 
 	private:
 		VkQueue queue_;
+	};
+
+	class Buffer_T
+	{
+	public:
+		enum class Type
+		{
+			UNKNOWN,
+			GPU_ONLY,
+			CPU_ONLY,
+			CPU_TO_GPU,
+			GPU_TO_CPU
+		};
+
+		Buffer_T(const Device_T* device,VkDeviceSize size, VkBufferUsageFlags usage, Type type);
+		~Buffer_T();
+		operator VkBuffer() const { return buffer_; }
+
+		void uploadLocal(const void* value, VkDeviceSize size);
+		template<typename T> void uploadLocal(T& value) { uploadLocal(&value,sizeof(T)); };
+		void upload(vk::CommandBuffer& cmd, const void* value, VkDeviceSize size);
+
+		void* map();
+		void unmap();
+		void flush();
+
+		uint32_t size() const { return size_; }
+
+		VkBuffer get() const { return buffer_; }
+	private:
+		const Device_T* device_;
+		VkBuffer buffer_;
+		VmaAllocation allocation_;
+		uint32_t size_ = 0;
+	};
+
+	class Sampler_T
+	{
+	public:
+		Sampler_T(const Device_T* device, const VkSamplerCreateInfo& info) {
+			VK_CHECK_RESULT(vkCreateSampler(*device_, &info, nullptr, &sampler_));
+		}
+		~Sampler_T() { vkDestroySampler(*device_, sampler_, nullptr); }
+		operator VkSampler() const { return sampler_; }
+	private:
+		const Device_T* device_;
+		VkSampler sampler_;
 	};
 
 	class InstanceMaker
@@ -667,6 +766,7 @@ namespace vg::vk
 			desc.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 			desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 			desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			desc.samples = VK_SAMPLE_COUNT_1_BIT;
 			s.attachmentDescriptions.emplace_back(desc);
 		}
 
@@ -926,7 +1026,7 @@ namespace vg::vk
 		PipelineMaker& logicOp(VkLogicOp value) { colorBlendState_.logicOp = value; return *this; }
 		PipelineMaker& blendConstants(float value[4]) { memcpy(colorBlendState_.blendConstants,value,sizeof(float)*4); return *this; }
 		 
-		PipelineMaker& dynamicState(VkDynamicState value) { dynamicState_.push_back(value); return *this; }
+		PipelineMaker& dynamicState(VkDynamicState value) { dynamicState_.emplace_back(value); return *this; }
 	private:
 		const Device_T* device_;
 		VkPipelineInputAssemblyStateCreateInfo inputAssemblyState_ = {VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
@@ -969,7 +1069,7 @@ namespace vg::vk
 	class DescriptorSetLayoutMaker
 	{
 	public:
-		void binding(uint32_t binding, VkDescriptorType descriptorType, uint32_t descriptorCount, VkShaderStageFlags stageFlags)
+		void binding(uint32_t binding, VkDescriptorType descriptorType, VkShaderStageFlags stageFlags, uint32_t descriptorCount = 1)
 		{
 			bindings_.push_back({ binding, descriptorType, descriptorCount, stageFlags, nullptr });
 		}
@@ -984,11 +1084,134 @@ namespace vg::vk
 		std::vector<VkDescriptorSetLayoutBinding> bindings_;
 	};
 
+	class SamplerMaker {
+	public:
+		SamplerMaker() {
+			info.magFilter = info.minFilter = VK_FILTER_NEAREST;
+			info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+			info.addressModeU = info.addressModeV  = info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+			info.mipLodBias = 0.0f;
+			info.anisotropyEnable = 0;
+			info.maxAnisotropy = 0.0f;
+			info.compareEnable = 0;
+			info.compareOp = VK_COMPARE_OP_NEVER;
+			info.minLod = 0;
+			info.maxLod = 0;
+			info.borderColor = {};
+			info.unnormalizedCoordinates = 0;
+		}
+
+		SamplerMaker &magFilter(VkFilter value) { info.magFilter = value; return *this; }
+
+		SamplerMaker &minFilter(VkFilter value) { info.minFilter = value; return *this; }
+
+		SamplerMaker &mipmapMode(VkSamplerMipmapMode value) { info.mipmapMode = value; return *this; }
+		SamplerMaker &addressModeU(VkSamplerAddressMode value) { info.addressModeU = value; return *this; }
+		SamplerMaker &addressModeV(VkSamplerAddressMode value) { info.addressModeV = value; return *this; }
+		SamplerMaker &addressModeW(VkSamplerAddressMode value) { info.addressModeW = value; return *this; }
+		SamplerMaker &mipLodBias(float value) { info.mipLodBias = value; return *this; }
+		SamplerMaker &anisotropyEnable(VkBool32 value) { info.anisotropyEnable = value; return *this; }
+		SamplerMaker &maxAnisotropy(float value) { info.maxAnisotropy = value; return *this; }
+		SamplerMaker &compareEnable(VkBool32 value) { info.compareEnable = value; return *this; }
+		SamplerMaker &compareOp(VkCompareOp value) { info.compareOp = value; return *this; }
+		SamplerMaker &minLod(float value) { info.minLod = value; return *this; }
+		SamplerMaker &maxLod(float value) { info.maxLod = value; return *this; }
+		SamplerMaker &borderColor(VkBorderColor value) { info.borderColor = value; return *this; }
+		SamplerMaker &unnormalizedCoordinates(VkBool32 value) { info.unnormalizedCoordinates = value; return *this; }
+
+		Sampler create(const Device& device) const {
+			return std::make_unique<Sampler_T>(device.get(), info);
+		}
+	private:
+		VkSamplerCreateInfo info;
+	};
+
+	class DescriptorSetUpdater {
+	public:
+		DescriptorSetUpdater(int maxBuffers = 10, int maxImages = 10) {
+			bufferInfo_.resize(maxBuffers);
+			imageInfo_.resize(maxImages);
+		}
+
+		void beginDescriptorSet(VkDescriptorSet dstSet) {
+			dstSet_ = dstSet;
+		}
+
+		void beginImages(uint32_t dstBinding, uint32_t dstArrayElement, VkDescriptorType descriptorType) {
+			VkWriteDescriptorSet wdesc = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+			wdesc.dstSet = dstSet_;
+			wdesc.dstBinding = dstBinding;
+			wdesc.dstArrayElement = dstArrayElement;
+			wdesc.descriptorCount = 0;
+			wdesc.descriptorType = descriptorType;
+			wdesc.pImageInfo = imageInfo_.data() + numImages_;
+			descriptorWrites_.push_back(wdesc);
+		}
+
+		void image(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout) {
+			if (!descriptorWrites_.empty() && numImages_ != imageInfo_.size() && descriptorWrites_.back().pImageInfo) {
+				descriptorWrites_.back().descriptorCount++;
+				imageInfo_[numImages_++] = { sampler, imageView, imageLayout };
+			}
+			else {
+				ok_ = false;
+			}
+		}
+
+		void beginBuffers(uint32_t dstBinding, uint32_t dstArrayElement, VkDescriptorType descriptorType) {
+			VkWriteDescriptorSet wdesc = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+			wdesc.dstSet = dstSet_;
+			wdesc.dstBinding = dstBinding;
+			wdesc.dstArrayElement = dstArrayElement;
+			wdesc.descriptorCount = 0;
+			wdesc.descriptorType = descriptorType;
+			wdesc.pBufferInfo = bufferInfo_.data() + numBuffers_;
+			descriptorWrites_.push_back(wdesc);
+		}
+
+		void buffer(VkBuffer buffer, VkDeviceSize offset, VkDeviceSize range) {
+			if (!descriptorWrites_.empty() && numBuffers_ != bufferInfo_.size() && descriptorWrites_.back().pBufferInfo) {
+				descriptorWrites_.back().descriptorCount++;
+				bufferInfo_[numBuffers_++] = { buffer, offset, range };
+			}
+			else {
+				ok_ = false;
+			}
+		}
+
+		void copy(vk::DescriptorSet srcSet, uint32_t srcBinding, uint32_t srcArrayElement, vk::DescriptorSet dstSet, uint32_t dstBinding, uint32_t dstArrayElement, uint32_t descriptorCount) {
+			descriptorCopies_.emplace_back(srcSet, srcBinding, srcArrayElement, dstSet, dstBinding, dstArrayElement, descriptorCount);
+		}
+
+		/// Call this to update the descriptor sets with their pointers (but not data).
+		void update(const Device& device) const {
+			vkUpdateDescriptorSets(*device, static_cast<uint32_t>(descriptorWrites_.size()), descriptorWrites_.data(), static_cast<uint32_t>(descriptorCopies_.size()), descriptorCopies_.data());
+		}
+
+		bool ok() const { return ok_; }
+	private:
+		std::vector<VkDescriptorBufferInfo> bufferInfo_;
+		std::vector<VkDescriptorImageInfo> imageInfo_;
+		std::vector<VkWriteDescriptorSet> descriptorWrites_;
+		std::vector<VkCopyDescriptorSet> descriptorCopies_;
+		VkDescriptorSet dstSet_;
+		int numBuffers_ = 0;
+		int numImages_ = 0;
+		bool ok_ = true;
+	};
+
 	inline std::vector<VkQueueFamilyProperties> getQueueFamilyProperties(VkPhysicalDevice physicalDevice) {
 		uint32_t count = 0;
 		vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, nullptr);
 		std::vector<VkQueueFamilyProperties> props(count);
 		vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, props.data());
 		return std::move(props);
+	}
+
+	inline VkBool32 getSurfaceSupport(VkPhysicalDevice physicalDevice,uint32_t familyIndex, VkSurfaceKHR surface)
+	{
+		VkBool32 support;
+		VK_CHECK_RESULT(vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, familyIndex, surface, &support));
+		return support;
 	}
 } // namespace vg::vk

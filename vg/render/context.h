@@ -91,6 +91,7 @@ namespace vg
 		std::vector<vk::CommandBuffer> commandBuffers;
 
 		VkSampleCountFlagBits sampeCount = VK_SAMPLE_COUNT_8_BIT;
+		VkFormat colorFormat = VK_FORMAT_B8G8R8A8_UNORM;
 		VkFormat depthFormat = VK_FORMAT_D24_UNORM_S8_UINT;
 	public:
 		Context_T(const void* windowHandle)
@@ -102,6 +103,7 @@ namespace vg
 
 			auto gpus = instance->getPhysicalDevice();
 			VkPhysicalDevice physicalDevice = gpus[0];
+
 			{
 				auto queueProps = vk::getQueueFamilyProperties(physicalDevice);
 				VkQueueFlags search = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT;
@@ -121,11 +123,19 @@ namespace vg
 				}
 			}
 
+			if (!vk::getSurfaceSupport(physicalDevice, graphicsQueueFamilyIndex, *surface)) {
+				log_error("surface not support");
+			}
+
 			vk::DeviceMaker dm;
 			dm.extension(VK_KHR_MAINTENANCE1_EXTENSION_NAME);
-			VkPhysicalDeviceFeatures feature;
+			VkPhysicalDeviceFeatures feature = {};
 			feature.wideLines = VK_TRUE;
 			dm.features(feature);
+			dm.queue(graphicsQueueFamilyIndex);
+			if (computerQueueFamilyIndex != graphicsQueueFamilyIndex) {
+				dm.queue(computerQueueFamilyIndex);
+			}
 			device = dm.create(physicalDevice);
 
 			auto prop = device->getPhysicalDeviceProperties();
@@ -141,16 +151,15 @@ namespace vg
 			}
 
 			descriptorPool = device->createDescriptorPool();
-
-			resize();
-
+			commandPool = device->createCommandPool(graphicsQueueFamilyIndex);
+			
 			vk::RenderpassMaker rm;
-			rm.attachmentBegin(swapchain->getColorFormat(),VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+			rm.attachmentBegin(colorFormat,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 			rm.attachmentSamples(sampeCount);
 			rm.attachmentLoadOp(VK_ATTACHMENT_LOAD_OP_CLEAR);
 			rm.attachmentStoreOp(VK_ATTACHMENT_STORE_OP_STORE);
 
-			rm.attachmentBegin(swapchain->getColorFormat(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+			rm.attachmentBegin(colorFormat, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 			rm.attachmentStoreOp(VK_ATTACHMENT_STORE_OP_STORE);
 
 			rm.attachmentBegin(depthFormat,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
@@ -165,6 +174,8 @@ namespace vg
 			rm.subpassResolveAttachment(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1);
 			rm.subpassDepthStencilAttachment(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 2);
 			renderPass = rm.create(device);
+
+			resize();
 		}
 
 		bool resize() {
@@ -196,10 +207,17 @@ namespace vg
 			return true;
 		}
 
-		vk::Device_T* getDevice() const { return device.get(); }
-		vk::Swapchain_T* getSwapchain() const { return swapchain.get(); }
-		vk::Queue_T* getGraphicsQueue() const { return graphicsQueue.get(); }
+		vk::Device& getDevice() { return device; }
+		vk::Swapchain& getSwapchain() { return swapchain; }
+		vk::Queue& getGraphicsQueue() { return graphicsQueue; }
 		VkExtent2D getExtent() const { return swapchain->getExtent(); }
+		VkFramebuffer getFrameBuffer(uint32_t index) const { return *frameBuffers.at(index); }
+		vk::CommandBuffer& getCommandBuffer(uint32_t index) { return commandBuffers.at(index); }
+		vk::RenderPass& getRenderPass() { return renderPass; }
+		vk::CommandPool& getCommandPool() { return commandPool; }
+		vk::DescriptorPool& getDescriptorPool() { return descriptorPool; }
+		vk::CommandBuffer createCommandBuffer() { return commandPool->createCommandBuffer(); }
+		VkSampleCountFlagBits getSampleCount() { return sampeCount; }
 	};
 
 	using Context = std::unique_ptr<Context_T>;

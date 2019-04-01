@@ -6,9 +6,9 @@
 #include <core/log.h>
 #include <glm/ext.hpp>
 
-//#include "state/renderState.h"
+#include "state/renderState.h"
 
-#include "geometryBuffer.h"
+//#include "geometryBuffer.h"
 
 namespace vg
 {
@@ -20,27 +20,28 @@ namespace vg
 			glm::mat4 view;
 		}data;
 
-		vku::HostUniformBuffer buffer;
-		vk::UniqueDescriptorSetLayout setLayout;
-		vk::UniqueDescriptorSet set;
+		vk::Buffer buffer;
+		vk::DescriptorSetLayout setLayout;
+
+		vk::DescriptorSet set;
 
 		CameraMatrix() {}
 
 		CameraMatrix(const Context& ctx) {
-			buffer = vku::HostUniformBuffer(ctx, ctx.getMemoryProperties(), sizeof(data));
-			vku::DescriptorSetLayoutMaker dlm;
-			dlm.buffer(0, vk::DescriptorType::eUniformBufferDynamic, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 1);
-			setLayout = dlm.createUnique(ctx);
+			buffer = ctx->getDevice()->createUniformBuffer(sizeof(data), true);
+			vk::DescriptorSetLayoutMaker dlm;
+			dlm.binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+			setLayout = dlm.create(ctx->getDevice());
 
-			vku::DescriptorSetMaker dm;
-			dm.layout(setLayout.get());
-			set = std::move(dm.createUnique(ctx, ctx.getDescriptorPool()).at(0));
+			//vku::DescriptorSetMaker dm;
+			//dm.layout(setLayout.get());
+			//set = std::move(dm.createUnique(ctx, ctx.getDescriptorPool()).at(0));
 
-			vku::DescriptorSetUpdater updater;
-			updater.beginDescriptorSet(set.get());
-			updater.beginBuffers(0, 0, vk::DescriptorType::eUniformBufferDynamic);
-			updater.buffer(buffer.buffer(), 0, sizeof(data));
-			updater.update(ctx);
+			//vku::DescriptorSetUpdater updater;
+			//updater.beginDescriptorSet(set.get());
+			//updater.beginBuffers(0, 0, vk::DescriptorType::eUniformBufferDynamic);
+			//updater.buffer(buffer.buffer(), 0, sizeof(data));
+			//updater.update(ctx);
 		}
 
 		void update(glm::mat4 p, glm::mat4 v) {
@@ -48,8 +49,8 @@ namespace vg
 			data.view = v;
 		}
 
-		void update(const Context& ctx) {
-			buffer.updateLocal(ctx, data);
+		void update() {
+			buffer->uploadLocal(data);
 		}
 	};
 
@@ -66,7 +67,7 @@ namespace vg
 		//GridRenderState gridState;
 		//GeometryRenderState geometryState;
 	public:
-		CameraMatrix matrix;
+		//CameraMatrix matrix;
 
 		bool prepared = false;
 	public:
@@ -74,7 +75,7 @@ namespace vg
 			ctx = createContext(windowHandle);
 
 			
-			matrix = CameraMatrix(ctx);
+			//matrix = CameraMatrix(ctx);
 
 			//imguiState = ImguiRenderState(ctx, renderPass.get());
 			//gridState = GridRenderState(ctx, renderPass.get(),matrix.setLayout.get());
@@ -100,23 +101,17 @@ namespace vg
 
 		void buildCommandBuffer(uint32_t index)
 		{
-			matrix.update(ctx);
+			//matrix.update();
 
-			auto& cmd = drawCommandBuffers.at(index).get();
+			auto& cmd = ctx->getCommandBuffer(index);
+			cmd->begin();
+			auto extent = ctx->getExtent();
 
-			cmd.begin(vk::CommandBufferBeginInfo());
+			VkRect2D area = { {},extent };
+			std::array<VkClearValue, 3> clearValue = { VkClearColorValue{0.0f},VkClearColorValue{0.0f},{1.0f,0} };
+			cmd->beginRenderPass(ctx->getRenderPass(), area, clearValue);
 
-			std::array<float, 4> clearColorValue{ 0.2f, 0.2f, 0.2f, 1 };
-			vk::ClearDepthStencilValue clearDepthValue{ 1.0f, 0 };
-			std::array<vk::ClearValue, 3> clearColours{ vk::ClearValue{clearColorValue},vk::ClearValue{clearColorValue}, clearDepthValue };
-			vk::RenderPassBeginInfo beginInfo;
-			beginInfo.renderPass = renderPass.get();
-			beginInfo.framebuffer = frameBuffers.at(index).get();
-			beginInfo.renderArea = vk::Rect2D{ {0, 0}, ctx.getExtent() };
-			beginInfo.clearValueCount = (uint32_t)clearColours.size();
-			beginInfo.pClearValues = clearColours.data();
-			cmd.beginRenderPass(beginInfo,vk::SubpassContents::eInline);
-
+			/*
 			vk::Viewport viewport = {0.0f,static_cast<float>(ctx.getExtent().height),static_cast<float>(ctx.getExtent().width),-static_cast<float>(ctx.getExtent().height),0.0f,1.0f };
 			cmd.setViewport(0, viewport);
 			vk::Rect2D scissor = { {},ctx.getExtent() };
@@ -128,11 +123,10 @@ namespace vg
 			viewport = { 0.0f,0.0f,static_cast<float>(ctx.getExtent().width),static_cast<float>(ctx.getExtent().height),0.0f,1.0f };
 			cmd.setViewport(0, viewport);
 			imguiState.draw(ctx, cmd);
+			*/
 
-			cmd.endRenderPass();
-			cmd.end();
-
-			
+			cmd->endRenderPass();
+			cmd->end();
 		}
 
 		void draw()
@@ -183,7 +177,7 @@ namespace vg
 
 		void addGeometry(uint64_t id, const GeometryBufferInfo& info)
 		{
-			geometryState.addGeometry(ctx, id, info);
+			//geometryState.addGeometry(ctx, id, info);
 		}
 	};
 
@@ -208,7 +202,7 @@ namespace vg
 
 	void Renderer::bindCamera(const Camera& camera)
 	{
-		impl->matrix.update(camera.getProjectionMatrix(impl->getAspect()), camera.getViewMatrix());
+		//impl->matrix.update(camera.getProjectionMatrix(impl->getAspect()), camera.getViewMatrix());
 	}
 
 	void Renderer::addGeometry(uint64_t id, const GeometryBufferInfo& info)
