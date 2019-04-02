@@ -80,14 +80,11 @@ namespace vg
 				"	fColor = vec4(0.3,0.7,0.4,1.0);\n"
 				"}\n";
 
-			auto pm = vk::PipelineMaker(ctx->getDevice()).defaultBlend(VK_FALSE);
+			auto pm = vk::PipelineMaker(ctx->getDevice()).defaultBlend(VK_FALSE).defaultDynamic(VK_DYNAMIC_STATE_LINE_WIDTH);
 			pm.shaderGLSL(VK_SHADER_STAGE_VERTEX_BIT, vert);
 			pm.shaderGLSL(VK_SHADER_STAGE_FRAGMENT_BIT, frag);
 			pm.vertexBinding(0, sizeof(glm::vec2));
 			pm.vertexAttribute(0, 0, VK_FORMAT_R32G32_SFLOAT, 0);
-			pm.dynamicState(VK_DYNAMIC_STATE_VIEWPORT);
-			pm.dynamicState(VK_DYNAMIC_STATE_SCISSOR);
-			pm.dynamicState(VK_DYNAMIC_STATE_LINE_WIDTH);
 			pm.depthTestEnable(VK_TRUE);
 			pm.depthWriteEnable(VK_TRUE);
 			pm.topology(VK_PRIMITIVE_TOPOLOGY_LINE_LIST);

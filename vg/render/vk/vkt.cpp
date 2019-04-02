@@ -270,22 +270,25 @@ namespace vg::vk
 		}
 	}
 
-	void Image_T::upload(CommandBuffer& cmd, const void* value)
+	void Image_T::upload(CommandBuffer& cmd, const Buffer& staging)
 	{
+		VkBufferImageCopy region = {};
+		region.imageExtent = info_.extent;
+		region.imageSubresource = { getAspect(info_.format),0,0,1 };
+
+		setLayout(cmd, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		cmd->copyBufferToImage(*staging, handle_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, region);
+		setLayout(cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	}
+
+	void Image_T::upload(CommandPool& pool, Queue& queue, const void* value) {
 		auto size = getBlockParams(info_.format).bytesPerBlock * info_.extent.width * info_.extent.height;
 		auto staging = std::make_unique<Buffer_T>(device_, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Buffer_T::Type::CPU_ONLY);
 		staging->uploadLocal(value);
 
-		VkBufferImageCopy region = {};
-		region.imageExtent = info_.extent;
-		region.imageSubresource = { getAspect(info_.format),0,0,1 };
-		cmd->copyBufferToImage(*staging, handle_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, region);
-	}
-
-	void Image_T::upload(CommandPool& pool, Queue& queue, const void* value) {
 		auto cmd = pool->createCommandBuffer();
 		cmd->begin();
-		upload(cmd, value);
+		upload(cmd, staging);
 		cmd->end();
 		queue->submit(cmd);
 		queue->waitIdle();
@@ -343,7 +346,7 @@ namespace vg::vk
 		VK_CHECK_RESULT(vkCreateImageView(*device_, &viewInfo, nullptr, &view_));
 	}
 
-	void Image_T::setLayout(CommandBuffer_T* cmd, VkImageLayout newLayout)
+	void Image_T::setLayout(CommandBuffer& cmd, VkImageLayout newLayout)
 	{
 		if (newLayout == layout_) return;
 		auto oldLayout = layout_;
@@ -355,13 +358,13 @@ namespace vg::vk
 		imageMemoryBarriers.oldLayout = oldLayout;
 		imageMemoryBarriers.newLayout = newLayout;
 		imageMemoryBarriers.image = handle_;
-		imageMemoryBarriers.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, info_.mipLevels, 0, info_.arrayLayers };
+		imageMemoryBarriers.subresourceRange = { getAspect(info_.format), 0, info_.mipLevels, 0, info_.arrayLayers };
 
 		auto srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
 		auto dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
 
-		VkAccessFlags srcMask;
-		VkAccessFlags dstMask;
+		VkAccessFlags srcMask = 0;
+		VkAccessFlags dstMask = 0;
 
 		switch (oldLayout) {
 		case VK_IMAGE_LAYOUT_GENERAL:								srcMask = VK_ACCESS_TRANSFER_WRITE_BIT; break;
@@ -478,20 +481,20 @@ namespace vg::vk
 		vmaFlushAllocation(device_->allocator(), allocation_, 0, size_);
 	}
 
-	void Buffer_T::upload(vk::CommandBuffer& cmd, const void* value)
+	void Buffer_T::upload(vk::CommandBuffer& cmd,const Buffer& staging)
 	{
-		auto staging = std::make_unique<Buffer_T>(device_,size_,VK_BUFFER_USAGE_TRANSFER_SRC_BIT,Type::CPU_ONLY);
-		staging->uploadLocal(value);
-
 		VkBufferCopy copy = {0,0,size_};
-		cmd->copyBuffer(*staging, handle_, copy);
+		cmd->copyBuffer(staging->get(), handle_, copy);
 	}
 
 	void Buffer_T::upload(CommandPool& pool, Queue& queue, const void* value)
 	{
+		auto staging = std::make_unique<Buffer_T>(device_, size_, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Type::CPU_ONLY);
+		staging->uploadLocal(value);
+
 		auto cmd = pool->createCommandBuffer();
 		cmd->begin();
-		upload(cmd, value);
+		upload(cmd, staging);
 		cmd->end();
 		queue->submit(cmd);
 		queue->waitIdle();

@@ -8,7 +8,7 @@
 
 #include "state/renderState.h"
 
-//#include "geometryBuffer.h"
+#include "geometryBuffer.h"
 
 namespace vg
 {
@@ -62,7 +62,7 @@ namespace vg
 
 		ImguiRenderState imguiState;
 		GridRenderState gridState;
-		//GeometryRenderState geometryState;
+		GeometryRenderState geometryState;
 	public:
 		CameraMatrix matrix;
 
@@ -78,9 +78,7 @@ namespace vg
 
 			imguiState = ImguiRenderState(ctx);
 			gridState = GridRenderState(ctx,matrix.setLayout);
-			//geometryState = GeometryRenderState(ctx, matrix.setLayout.get());
-
-			
+			geometryState = GeometryRenderState(ctx, matrix.setLayout);
 
 			prepared = true;
 		}
@@ -115,8 +113,7 @@ namespace vg
 
 			gridState.draw(ctx, cmd, matrix.set);
 
-			//geometryState.draw(ctx, cmd, renderPass.get(), matrix.set.get());
-			
+			geometryState.draw(ctx, cmd, ctx->getRenderPass(), matrix.set);
 
 			cmd->viewport(0, 0, extent.width, extent.height);
 			imguiState.draw(ctx, cmd);
@@ -179,15 +176,13 @@ namespace vg
 
 		void addGeometry(uint64_t id, const GeometryBufferInfo& info)
 		{
-			//geometryState.addGeometry(ctx, id, info);
+			geometryState.addGeometry(ctx, id, info);
 		}
 	};
 
 	void Renderer::setup(const void* windowHandle)
 	{
 		impl = new RendererImpl(windowHandle);
-		//impl->setupRenderMeshState();
-		
 	}
 
 	void Renderer::draw()

@@ -8,18 +8,18 @@ namespace vg
 
 	class GeometryRenderState
 	{
-		vk::UniquePipelineLayout layout;
-		vk::UniquePipeline pipeline;
+		vk::PipelineLayout layout;
+		vk::Pipeline pipeline;
 
 		std::unordered_map<uint64_t, GeometryBuffer> geometries;
 	public:
 		GeometryRenderState() {}
 
-		GeometryRenderState(const Context& ctx, vk::DescriptorSetLayout cameraSetLayout)
+		GeometryRenderState(const Context& ctx, vk::DescriptorSetLayout& cameraSetLayout)
 		{
-			auto plm = vku::PipelineLayoutMaker();
-			plm.descriptorSetLayout(cameraSetLayout);
-			layout = plm.createUnique(ctx);
+			auto plm = vk::PipelineLayoutMaker();
+			plm.setLayout(cameraSetLayout);
+			layout = plm.create(ctx->getDevice());
 		}
 
 		void addGeometry(const Context& ctx, uint64_t id, const GeometryBufferInfo& info) {
@@ -31,13 +31,13 @@ namespace vg
 			}
 		}
 
-		void setupPipeline(const Context& ctx,vk::RenderPass renderPass)
+		void setupPipeline(const Context& ctx,vk::RenderPass& renderPass)
 		{
 			const std::string vert =
 				"#version 450\n"
 				"layout(location=0)in vec3 position;\n"
 				"layout(location=1)in vec3 normal;\n"
-
+				"layout(location=2)in vec2 texcoord;\n"
 				"layout(set=0,binding=0) uniform CameraMatrix {\n"
 				"	mat4 projection;\n"
 				"	mat4 view;\n"
@@ -59,46 +59,35 @@ namespace vg
 				"	color = vec4(vec3(intensity),1.0);\n"
 				"}";
 
-			auto vertShader = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eVertex, vert);
-			auto fragShader = ctx.compileGLSLToSpv(vk::ShaderStageFlagBits::eFragment, frag);
-			auto pm = vku::PipelineMaker{ ctx.getExtent().width,ctx.getExtent().height };
-			pm.shader(vk::ShaderStageFlagBits::eVertex, vertShader);
-			pm.shader(vk::ShaderStageFlagBits::eFragment, fragShader);
-			
-			auto bindings = geometries.begin()->second.getBindingInfo();
-			auto attributs = geometries.begin()->second.getAttributeInfo();
-			for (auto& b : bindings) {
-				pm.vertexBinding(b);
-			}
-			for (auto& a : attributs) {
-				pm.vertexAttribute(a);
-			}
-
-			pm.topology(vk::PrimitiveTopology::eTriangleList);
+			auto pm = vk::PipelineMaker(ctx->getDevice()).defaultBlend(VK_FALSE).defaultDynamic();
+			pm.shaderGLSL(VK_SHADER_STAGE_VERTEX_BIT, vert);
+			pm.shaderGLSL(VK_SHADER_STAGE_FRAGMENT_BIT, frag);
+			pm.vertexBinding(geometries.begin()->second.bindings);
+			pm.vertexAttribute(geometries.begin()->second.attributes);
 			pm.depthTestEnable(VK_TRUE);
 			pm.depthWriteEnable(VK_TRUE);
-			pm.rasterizationSamples(Context::getSample());
-			pm.dynamicState(vk::DynamicState::eViewport);
-			pm.dynamicState(vk::DynamicState::eScissor);
-			pipeline = pm.createUnique(ctx, vk::PipelineCache(), layout.get(), renderPass);
+			pm.rasterizationSamples(ctx->getSampleCount());
+			pipeline = pm.create(layout, ctx->getRenderPass());
 		}
 
 		
-		void draw(const Context& ctx, vk::CommandBuffer cmd, vk::RenderPass renderPass, vk::DescriptorSet cameraSet)
+		void draw(const Context& ctx, vk::CommandBuffer& cmd, vk::RenderPass& renderPass, vk::DescriptorSet& cameraSet)
 		{
 			if (geometries.size() > 0) {
 				if (!pipeline) {
 					setupPipeline(ctx, renderPass);
 				}
 
-				cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.get());
+				cmd->bindPipeline(pipeline);
 				uint32_t setOffset = { 0 };
-				cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout.get(), 0, cameraSet, setOffset);
-
+				cmd->bindDescriptorSet(layout, 0, cameraSet->get(), setOffset);
 
 				for (auto& g : geometries)
 				{
-					g.second.draw(cmd);
+					VkDeviceSize offset = { 0 };
+					cmd->bindVertexBuffer(0, g.second.vertexBuffer->get(),offset);
+					cmd->bindIndexBuffer(g.second.indexBuffer->get(), 0, g.second.indexType);
+					cmd->drawIndexd(g.second.count, 1);
 				}
 			}
 		}

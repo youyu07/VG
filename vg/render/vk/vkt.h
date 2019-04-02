@@ -311,9 +311,9 @@ namespace vg::vk
 		~Image_T();
 		inline VkImageView view() const { return view_; }
 
-		void setLayout(CommandBuffer_T* cmd, VkImageLayout newLayout);
+		void setLayout(CommandBuffer& cmd, VkImageLayout newLayout);
 
-		void upload(CommandBuffer& cmd, const void* value);
+		void upload(CommandBuffer& cmd, const Buffer& staging);
 
 		void upload(CommandPool& pool, Queue& queue, const void* value);
 	private:
@@ -322,7 +322,7 @@ namespace vg::vk
 		const Device_T* device_;
 		VkImageView view_ = VK_NULL_HANDLE;
 		VmaAllocation allocation_ = VK_NULL_HANDLE;
-		VkImageLayout layout_;
+		VkImageLayout layout_ = VK_IMAGE_LAYOUT_UNDEFINED;
 		VkImageCreateInfo info_;
 	};
 
@@ -464,7 +464,7 @@ namespace vg::vk
 		~Buffer_T();
 
 		void uploadLocal(const void* value);
-		void upload(CommandBuffer& cmd, const void* value);
+		void upload(CommandBuffer& cmd, const Buffer& staging);
 		void upload(CommandPool& pool, Queue& queue, const void* value);
 
 		void* map();
@@ -939,6 +939,12 @@ namespace vg::vk
 			colorBlendAttachments_.push_back(blend);
 			return *this;
 		}
+		PipelineMaker& defaultDynamic(ArrayProxy<const VkDynamicState> dynamic = nullptr) {
+			dynamicState_.emplace_back(VK_DYNAMIC_STATE_VIEWPORT);
+			dynamicState_.emplace_back(VK_DYNAMIC_STATE_SCISSOR);
+			dynamicState_.insert(dynamicState_.end(),dynamic.begin(), dynamic.end());
+			return *this;
+		}
 
 		PipelineMaker& blendBegin(VkBool32 enable) {
 			colorBlendAttachments_.emplace_back();
@@ -975,9 +981,19 @@ namespace vg::vk
 			return *this;
 		}
 
+		PipelineMaker& vertexAttribute(ArrayProxy<const VkVertexInputAttributeDescription> value) { 
+			vertexAttributeDescriptions_.insert(vertexAttributeDescriptions_.end(),value.begin(),value.end());
+			return *this; 
+		}
+
 		PipelineMaker& vertexBinding(uint32_t binding, uint32_t stride, VkVertexInputRate inputRate = VK_VERTEX_INPUT_RATE_VERTEX) {
 			vertexBindingDescriptions_.push_back({ binding, stride, inputRate });
 			return *this;
+		}
+
+		PipelineMaker& vertexBinding(ArrayProxy<const VkVertexInputBindingDescription> value) {
+			vertexBindingDescriptions_.insert(vertexBindingDescriptions_.end(), value.begin(), value.end());
+			return *this; 
 		}
 
 		PipelineMaker& topology(VkPrimitiveTopology topology) { inputAssemblyState_.topology = topology; return *this; }
@@ -1118,7 +1134,7 @@ namespace vg::vk
 			return std::make_unique<Sampler_T>(device.get(), info);
 		}
 	private:
-		VkSamplerCreateInfo info = {};
+		VkSamplerCreateInfo info = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
 	};
 
 	class DescriptorSetUpdater {
