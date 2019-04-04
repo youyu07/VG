@@ -97,6 +97,8 @@ namespace vg
 			descriptorPool = device->createDescriptorPool();
 			commandPool = device->createCommandPool(graphicsQueueFamilyIndex);
 			
+			swapchain = device->createSwapchain(surface);
+			colorFormat = swapchain->getColorFormat();
 			vk::RenderpassMaker rm;
 			rm.attachmentBegin(colorFormat,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 			rm.attachmentSamples(sampeCount);
@@ -119,7 +121,6 @@ namespace vg
 			rm.subpassDepthStencilAttachment(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 2);
 			renderPass = rm.create(device);
 
-			swapchain = device->createSwapchain(surface);
 			createFrameBuffer();
 		}
 
