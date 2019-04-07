@@ -14,9 +14,11 @@ namespace vg
 
 		void resize();
 
-		void addGeometry(uint64_t id, const GeometryBufferInfo& info);
+		void addGeometry(uint32_t id, const GeometryBufferInfo& info);
 
 		void bindCamera(const Camera& camera);
+
+		void click(glm::uvec2 point);
 	private:
 		class RendererImpl* impl = nullptr;
 	};

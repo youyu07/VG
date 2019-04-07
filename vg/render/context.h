@@ -8,7 +8,6 @@ namespace vg
 	class Context_T
 	{
 		vk::Instance instance;
-		vk::DebugCallback debugCallback;
 		vk::Device device;
 		vk::DescriptorPool descriptorPool;
 		vk::CommandPool commandPool;
@@ -40,8 +39,6 @@ namespace vg
 		{
 			vk::InstanceMaker im;
 			instance = im.create();
-
-			debugCallback = instance->createDebugCallBack();
 
 			surface = instance->createSurface(windowHandle);
 
@@ -75,6 +72,8 @@ namespace vg
 			dm.extension(VK_KHR_MAINTENANCE1_EXTENSION_NAME);
 			VkPhysicalDeviceFeatures feature = {};
 			feature.wideLines = VK_TRUE;
+			feature.geometryShader = VK_TRUE;
+			feature.fillModeNonSolid = VK_TRUE;
 			dm.features(feature);
 			dm.queue(graphicsQueueFamilyIndex);
 			if (computerQueueFamilyIndex != graphicsQueueFamilyIndex) {

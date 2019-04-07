@@ -103,10 +103,41 @@ namespace vg::vk
 		Type handle_ = VK_NULL_HANDLE;
 	};
 
+	enum class MemoryUsage
+	{
+		UNKNOWN,
+		GPU_ONLY,
+		CPU_ONLY,
+		CPU_TO_GPU,
+		GPU_TO_CPU
+	};
+
+	enum class ViewType
+	{
+		VIEW_1D = 0,
+		VIEW_2D = 1,
+		VIEW_3D = 2,
+		VIEW_CUBE = 3,
+		VIEW_1D_ARRAY = 4,
+		VIEW_2D_ARRAY = 5,
+		VIEW_CUBE_ARRAY = 6,
+		NONE
+	};
+
 	class Instance_T : public Handle_T<VkInstance>
 	{
 	public:
-		Instance_T(VkInstance instance) : Handle_T(instance) {}
+		Instance_T(VkInstanceCreateInfo& info, VkBool32 validation) {
+			if (validation) {
+				VkDebugUtilsMessengerCreateInfoEXT db_info = { VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT };
+				db_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+				db_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+				db_info.pfnUserCallback = debug_callback;
+				info.pNext = &db_info;
+			}
+
+			VK_CHECK_RESULT(vkCreateInstance(&info, nullptr, &handle_));
+		}
 		~Instance_T() { vkDestroyInstance(handle_, nullptr); }
 
 		std::vector<VkPhysicalDevice> getPhysicalDevice()
@@ -124,6 +155,14 @@ namespace vg::vk
 
 		PFN_vkVoidFunction getProcAddr(const char* name) const {
 			return vkGetInstanceProcAddr(handle_, name);
+		}
+
+	private:
+		static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType,
+			const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) 
+		{
+			log_error(pCallbackData->pMessage);
+			return VK_FALSE;
 		}
 	};
 
@@ -240,6 +279,7 @@ namespace vg::vk
 		Image createTexture2D(uint32_t width, uint32_t height, uint32_t mipLevels = 1, VkFormat format = VK_FORMAT_R8G8B8A8_UNORM);
 		Image createDepthStencilAttachment(uint32_t width, uint32_t height, VkSampleCountFlagBits sample = VK_SAMPLE_COUNT_1_BIT, VkFormat format = VK_FORMAT_D24_UNORM_S8_UINT);
 		Image createColorAttachment(uint32_t width, uint32_t height, VkSampleCountFlagBits sample = VK_SAMPLE_COUNT_1_BIT, VkFormat format = VK_FORMAT_B8G8R8A8_UNORM);
+		Image createTransferImage(uint32_t width, uint32_t height, VkFormat format = VK_FORMAT_B8G8R8A8_UNORM);
 
 		Buffer createUniformBuffer(VkDeviceSize size, VkBool32 dynamic = false);
 		Buffer createVertexBuffer(VkDeviceSize size, VkBool32 dynamic = false);
@@ -306,16 +346,24 @@ namespace vg::vk
 	class Image_T : public Handle_T<VkImage>
 	{
 	public:
-		Image_T(const Device_T* device, VkImageCreateInfo& info, VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D);
-		Image_T(const Device_T* device, VkImageCreateInfo& info, VkImage image, VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D);
+		Image_T(const Device_T* device, VkImageCreateInfo& info, MemoryUsage memoryUsage, ViewType viewType = ViewType::VIEW_2D);
+		Image_T(const Device_T* device, VkImageCreateInfo& info, VkImage image, ViewType viewType = ViewType::VIEW_2D);
 		~Image_T();
 		inline VkImageView view() const { return view_; }
 
 		void setLayout(CommandBuffer& cmd, VkImageLayout newLayout);
 
 		void upload(CommandBuffer& cmd, const Buffer& staging);
-
 		void upload(CommandPool& pool, Queue& queue, const void* value);
+
+		void* map();
+		void unmap();
+
+		VkDeviceSize size() const;
+
+		VkImageSubresourceLayers getSubresourceLayers(uint32_t mipLevel, uint32_t baseArrayLayer = 0, uint32_t layerCount = 1) const;
+		VkImageSubresourceRange getSubresourceRange() const;
+		VkImageSubresourceRange getSubresourceRange(uint32_t baseMipLevel, uint32_t levelCount, uint32_t baseArrayLayer, uint32_t layerCount) const;
 	private:
 		void setupView(VkImageViewType viewType);
 
@@ -451,16 +499,7 @@ namespace vg::vk
 	class Buffer_T : public Handle_T<VkBuffer>
 	{
 	public:
-		enum class Type
-		{
-			UNKNOWN,
-			GPU_ONLY,
-			CPU_ONLY,
-			CPU_TO_GPU,
-			GPU_TO_CPU
-		};
-
-		Buffer_T(const Device_T* device,VkDeviceSize size, VkBufferUsageFlags usage, Type type);
+		Buffer_T(const Device_T* device,VkDeviceSize size, VkBufferUsageFlags usage, MemoryUsage memoryUsage);
 		~Buffer_T();
 
 		void uploadLocal(const void* value);
@@ -582,6 +621,14 @@ namespace vg::vk
 		void copyBufferToImage(VkBuffer src, VkImage dst, VkImageLayout layout, ArrayProxy<const VkBufferImageCopy> region) {
 			vkCmdCopyBufferToImage(handle_, src, dst, layout, region.size(), region.data());
 		}
+
+		void copyImage(const Image& src, VkImageLayout srcLayout, const Image& dst, VkImageLayout dstLayout, ArrayProxy<const VkImageCopy> region) {
+			vkCmdCopyImage(handle_, src->get(), srcLayout, dst->get(), dstLayout, region.size(), region.data());
+		}
+
+		void blit(const Image& src,VkImageLayout srcLayout,const Image& dst,VkImageLayout dstLayout,ArrayProxy<const VkImageBlit> blits,VkFilter filter = VK_FILTER_LINEAR) {
+			vkCmdBlitImage(handle_, src->get(), srcLayout, dst->get(), dstLayout, blits.size(), blits.data(), filter);
+		}
 	private:
 		const Device_T* device_;
 		const CommandPool_T* pool_;
@@ -674,9 +721,7 @@ namespace vg::vk
 			instance_info.ppEnabledLayerNames = layers_.data();
 			instance_info.enabledExtensionCount = static_cast<uint32_t>(extensions_.size());
 			instance_info.ppEnabledExtensionNames = extensions_.data();
-			VkInstance instance = VK_NULL_HANDLE;
-			VK_CHECK_RESULT(vkCreateInstance(&instance_info, nullptr, &instance));
-			return std::make_unique<Instance_T>(instance);
+			return std::make_unique<Instance_T>(instance_info,VK_TRUE);
 		}
 
 	private:
@@ -858,6 +903,16 @@ namespace vg::vk
 			depthStencilState_.stencilTestEnable = VK_FALSE;
 			depthStencilState_.front = depthStencilState_.back;
 			depthStencilState_.maxDepthBounds = 1.0f;
+
+			multisampleState_.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+		}
+
+		~PipelineMaker()
+		{
+			for (auto& shader : modules_)
+			{
+				vkDestroyShaderModule(*device_, shader.module, nullptr);
+			}
 		}
 
 		Pipeline create(const PipelineLayout& pipelineLayout, const RenderPass& renderPass) {
@@ -896,17 +951,17 @@ namespace vg::vk
 			pipelineInfo.pDynamicState = dynamicState_.empty() ? nullptr : &dynState;
 			pipelineInfo.subpass = subpass_;
 
-			auto result = std::make_unique<Pipeline_T>(device_, pipelineInfo);
-
-			for (auto& shader : modules_)
-			{
-				vkDestroyShaderModule(*device_, shader.module, nullptr);
-			}
-
-			return std::move(result);
+			return std::make_unique<Pipeline_T>(device_, pipelineInfo);
 		}
 
 		PipelineMaker& shader(VkShaderStageFlagBits stage,size_t size,const uint32_t* code) {
+			for (auto it = modules_.begin(); it != modules_.end(); it++) {
+				if (it->stage == stage) {
+					vkDestroyShaderModule(device_->get(), it->module, nullptr);
+					modules_.erase(it);
+				}
+			}
+
 			VkShaderModuleCreateInfo shaderInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
 			shaderInfo.codeSize = size;
 			shaderInfo.pCode = code;
@@ -918,7 +973,6 @@ namespace vg::vk
 			info.pName = "main";
 			info.stage = stage;
 			modules_.emplace_back(info);
-
 			return *this;
 		}
 

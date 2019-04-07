@@ -6,6 +6,8 @@
 #include <Windows.h>
 #endif
 
+#include "key.h"
+
 namespace vg
 {
 
@@ -44,7 +46,9 @@ namespace vg
 			{
 				Minimized,
 				Maximized,
-				Restored
+				Restored,
+				MaxShow,
+				MaxHide
 			}type;
 			int width, height;
 		};
@@ -73,8 +77,17 @@ namespace vg
 
 		virtual void mouseEvent(const MouseEvent& event) {}
 		virtual void windowEvent(const WindowEvent& event) {}
+
+		void setKeyState(Key key,bool isDown) {
+			keyDown[static_cast<uint32_t>(key)] = isDown;
+		}
+
+		bool getKeyState(Key key) {
+			return keyDown[static_cast<uint32_t>(key)];
+		}
     private:
 		WindowInfo windowInfo;
+		bool keyDown[512] = {};
     };
 
 }

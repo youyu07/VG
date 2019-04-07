@@ -46,10 +46,10 @@ namespace vg
 		// indices
 		for(uint32_t iy = 0; iy < segmentY; iy++) {
 			for(uint32_t ix = 0; ix < segmentX; ix++) {
-				auto a = grid[iy][ix + 1];
-				auto b = grid[iy][ix];
-				auto c = grid[iy + 1][ix];
-				auto d = grid[iy + 1][ix + 1];
+				auto a = grid.at(iy).at(ix + 1);
+				auto b = grid.at(iy).at(ix);
+				auto c = grid.at(iy + 1).at(ix);
+				auto d = grid.at(iy + 1).at(ix + 1);
 
 				if (iy != 0) {
 					indices.push_back(a);

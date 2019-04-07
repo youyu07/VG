@@ -43,6 +43,7 @@ namespace vg
 
 		void update(glm::mat4 p, glm::mat4 v) {
 			data.projection = p;
+			data.projection[1][1] *= -1;
 			data.view = v;
 		}
 
@@ -60,9 +61,15 @@ namespace vg
 		vk::Semaphore acquireSemaphore;
 		vk::Semaphore drawSemaphore;
 
-		ImguiRenderState imguiState;
-		GridRenderState gridState;
-		GeometryRenderState geometryState;
+		struct
+		{
+			ImguiRenderState imgui;
+			GridRenderState grid;
+			GeometryRenderState geometry;
+			PickRenderState pick;
+		}stat;
+		
+		GeometryManager geometries;
 	public:
 		CameraMatrix matrix;
 
@@ -76,9 +83,10 @@ namespace vg
 			
 			matrix = CameraMatrix(ctx);
 
-			imguiState = ImguiRenderState(ctx);
-			gridState = GridRenderState(ctx,matrix.setLayout);
-			geometryState = GeometryRenderState(ctx, matrix.setLayout);
+			stat.imgui = ImguiRenderState(ctx);
+			stat.grid = GridRenderState(ctx,matrix.setLayout);
+			stat.geometry = GeometryRenderState(ctx, matrix.setLayout);
+			stat.pick = PickRenderState(ctx, matrix.setLayout);
 
 			prepared = true;
 		}
@@ -96,6 +104,11 @@ namespace vg
 			}
 		}
 
+		void select(glm::uvec2 point) {
+			auto sel = stat.pick.select(ctx, matrix.set, geometries,point);
+			stat.geometry.setSelect(sel);
+		}
+
 		void buildCommandBuffer(uint32_t index)
 		{
 			matrix.update();
@@ -108,19 +121,21 @@ namespace vg
 			std::array<VkClearValue, 3> clearValue = { VkClearColorValue{0.0f},VkClearColorValue{0.0f},{1.0f,0} };
 			cmd->beginRenderPass(ctx->getRenderPass(),ctx->getFrameBuffer(index), area, clearValue);
 
-			cmd->viewport(0, extent.height, extent.width, -static_cast<float>(extent.height));
+			cmd->viewport(0, 0, extent.width, extent.height);
 			cmd->scissor(0, 0, extent.width, extent.height);
 
-			gridState.draw(ctx, cmd, matrix.set);
+			stat.grid.draw(ctx, cmd, matrix.set);
 
-			geometryState.draw(ctx, cmd, ctx->getRenderPass(), matrix.set);
+			stat.geometry.draw(ctx, cmd, matrix.set,geometries);
 
 			cmd->viewport(0, 0, extent.width, extent.height);
-			imguiState.draw(ctx, cmd);
+			stat.imgui.draw(ctx, cmd);
 			
 
 			cmd->endRenderPass();
 			cmd->end();
+
+			//stat.pick.select(ctx, matrix.set, geometries, glm::uvec2());
 		}
 
 		void draw()
@@ -174,9 +189,9 @@ namespace vg
 			}
 		}
 
-		void addGeometry(uint64_t id, const GeometryBufferInfo& info)
+		void addGeometry(uint32_t id, const GeometryBufferInfo& info)
 		{
-			geometryState.addGeometry(ctx, id, info);
+			geometries.addGeometry(ctx, id, info);
 		}
 	};
 
@@ -202,8 +217,13 @@ namespace vg
 		impl->matrix.update(camera.getProjectionMatrix(impl->getAspect()), camera.getViewMatrix());
 	}
 
-	void Renderer::addGeometry(uint64_t id, const GeometryBufferInfo& info)
+	void Renderer::addGeometry(uint32_t id, const GeometryBufferInfo& info)
 	{
 		impl->addGeometry(id, info);
+	}
+
+	void Renderer::click(glm::uvec2 point)
+	{
+		impl->select(point);
 	}
 }

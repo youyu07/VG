@@ -1,6 +1,7 @@
 #pragma once
 #include "context.h"
 #include "geometryInfo.h"
+#include <functional>
 
 namespace vg
 {
@@ -49,4 +50,40 @@ namespace vg
 		}
 	};
 
+
+	class GeometryManager
+	{
+		std::unordered_map<uint32_t, GeometryBuffer> geometries;
+
+	public:
+		void addGeometry(const Context& ctx, uint32_t id, const GeometryBufferInfo& info) {
+			if (geometries.find(id) == geometries.end()) {
+				geometries[id] = GeometryBuffer(ctx, info);
+			}
+			else {
+				log_error("Geometry id is exist : ", id);
+			}
+		}
+
+		void draw(vk::CommandBuffer& cmd)
+		{
+			for (auto& g : geometries)
+			{
+				auto& l = g.second;
+
+				VkDeviceSize offset = { 0 };
+				cmd->bindVertexBuffer(0, l.vertexBuffer->get(), offset);
+				cmd->bindIndexBuffer(l.indexBuffer->get(), 0, l.indexType);
+				cmd->drawIndexd(l.count, 1);
+			}
+		}
+
+		void draw(std::function<void(uint32_t,const GeometryBuffer&)> callback) 
+		{
+			for (auto& g : geometries)
+			{
+				callback(g.first, g.second);
+			}
+		}
+	};
 }

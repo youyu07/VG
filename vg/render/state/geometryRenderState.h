@@ -9,9 +9,15 @@ namespace vg
 	class GeometryRenderState
 	{
 		vk::PipelineLayout layout;
-		vk::Pipeline pipeline;
 
-		std::unordered_map<uint64_t, GeometryBuffer> geometries;
+		struct
+		{
+			vk::Pipeline line;
+			vk::Pipeline fill;
+		}pipeline;
+		
+
+		SelectInfo selectInfo = {};
 	public:
 		GeometryRenderState() {}
 
@@ -19,19 +25,13 @@ namespace vg
 		{
 			auto plm = vk::PipelineLayoutMaker();
 			plm.setLayout(cameraSetLayout);
+			plm.pushConstant(VK_SHADER_STAGE_FRAGMENT_BIT, 0, 16);
 			layout = plm.create(ctx->getDevice());
+
+			setupPipeline(ctx);
 		}
 
-		void addGeometry(const Context& ctx, uint64_t id, const GeometryBufferInfo& info) {
-			if (geometries.find(id) == geometries.end()) {
-				geometries[id] = GeometryBuffer(ctx, info);
-			}
-			else {
-				log_error("Geometry id is exist : ", id);
-			}
-		}
-
-		void setupPipeline(const Context& ctx,vk::RenderPass& renderPass)
+		void setupPipeline(const Context& ctx)
 		{
 			const std::string vert =
 				"#version 450\n"
@@ -53,45 +53,77 @@ namespace vg
 				"#version 450\n"
 				"layout(location=0)in vec3 v_normal;\n"
 				"layout(location=0)out vec4 color;\n"
+				"layout(push_constant) uniform PushConstant {\n"
+				"	uint objectIndex;\n"
+				"	uint primitive;\n"
+				"	uint color;\n"
+				"	uint padding;\n"
+				"} pc;\n"
 				"void main(){\n"
-				"	vec3 light = vec3(1.0,1.0,1.0);\n"
-				"	float intensity = dot(light,v_normal);\n"
-				"	color = vec4(vec3(intensity),1.0);\n"
+				"	float r = float((0x000000ff & pc.color) >> 0) / 255.0f;\n"
+				"	float g = float((0x0000ff00 & pc.color) >> 8) / 255.0f;\n"
+				"	float b = float((0x00ff0000 & pc.color) >> 16) / 255.0f;\n"
+				"	float a = float((0xff000000 & pc.color) >> 24) / 255.0f;\n"
+				"	color = vec4(r,g,b,a);\n"
+				"	if(pc.primitive == gl_PrimitiveID + 1) color = mix(color, vec4(1.0,0.0,0.0,1.0),0.5);\n"
 				"}";
 
 			auto pm = vk::PipelineMaker(ctx->getDevice()).defaultBlend(VK_FALSE).defaultDynamic();
 			pm.shaderGLSL(VK_SHADER_STAGE_VERTEX_BIT, vert);
 			pm.shaderGLSL(VK_SHADER_STAGE_FRAGMENT_BIT, frag);
-			pm.vertexBinding(geometries.begin()->second.bindings);
-			pm.vertexAttribute(geometries.begin()->second.attributes);
+			pm.vertexBinding(0,32);
+			pm.vertexAttribute(0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0);
+			pm.vertexAttribute(1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12);
+			pm.vertexAttribute(2, 0, VK_FORMAT_R32G32_SFLOAT, 24);
 			pm.depthTestEnable(VK_TRUE);
 			pm.depthWriteEnable(VK_TRUE);
 			pm.rasterizationSamples(ctx->getSampleCount());
-			pipeline = pm.create(layout, ctx->getRenderPass());
+			pipeline.fill = pm.create(layout, ctx->getRenderPass());
+
+			pm.polygonMode(VK_POLYGON_MODE_LINE);
+			pipeline.line = pm.create(layout, ctx->getRenderPass());
 		}
 
+		void setSelect(const SelectInfo& sel) {
+			selectInfo = sel;
+		}
 		
-		void draw(const Context& ctx, vk::CommandBuffer& cmd, vk::RenderPass& renderPass, vk::DescriptorSet& cameraSet)
+		void draw(const Context& ctx, vk::CommandBuffer& cmd, vk::DescriptorSet& cameraSet,GeometryManager& geometries)
 		{
-			if (geometries.size() > 0) {
-				if (!pipeline) {
-					setupPipeline(ctx, renderPass);
-				}
+			uint32_t setOffset = { 0 };
+			cmd->bindDescriptorSet(layout, 0, cameraSet->get(), setOffset);
 
-				cmd->bindPipeline(pipeline);
-				uint32_t setOffset = { 0 };
-				cmd->bindDescriptorSet(layout, 0, cameraSet->get(), setOffset);
+			struct
+			{
+				uint32_t objectID;
+				uint32_t PirmID;
+				glm::u8vec4 color;
+				uint32_t padding;
+			}pc;
 
-				for (auto& g : geometries)
-				{
+			auto doDraw = [&](const glm::u8vec4& color) {
+				geometries.draw([&](uint32_t id, const GeometryBuffer & g) {
+					if (selectInfo.ObjectID == id + 1) {
+						pc = { selectInfo.ObjectID,selectInfo.PrimID,color,0 };
+						cmd->pushContants(layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, pc);
+					}
+					else {
+						pc = { 0,0,color,0 };
+						cmd->pushContants(layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, pc);
+					}
+
 					VkDeviceSize offset = { 0 };
-					cmd->bindVertexBuffer(0, g.second.vertexBuffer->get(),offset);
-					cmd->bindIndexBuffer(g.second.indexBuffer->get(), 0, g.second.indexType);
-					cmd->drawIndexd(g.second.count, 1);
-				}
-			}
+					cmd->bindVertexBuffer(0, g.vertexBuffer->get(), offset);
+					cmd->bindIndexBuffer(g.indexBuffer->get(), 0, g.indexType);
+					cmd->drawIndexd(g.count, 1);
+					});
+			};
+
+			cmd->bindPipeline(pipeline.fill);
+			doDraw(glm::u8vec4(128,128,128,255));
+			cmd->bindPipeline(pipeline.line);
+			doDraw(glm::u8vec4(64, 64, 64, 255));
 		}
-		
 	};
 
 }

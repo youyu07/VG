@@ -44,7 +44,6 @@ namespace vg
 		case WM_MOUSEMOVE:
 			entry->mouseEvent({ Entry::MouseEvent::Type::Move,(float)LOWORD(lParam), (float)HIWORD(lParam) });
 			break;
-
 		case WM_SIZE:
 			if (entry) {
 				int width = LOWORD(lParam);
@@ -54,8 +53,20 @@ namespace vg
 				case SIZE_MINIMIZED:entry->windowEvent({ Entry::WindowEvent::Type::Minimized,width,height }); break;
 				case SIZE_MAXIMIZED:entry->windowEvent({ Entry::WindowEvent::Type::Maximized,width,height }); break;
 				case SIZE_RESTORED:entry->windowEvent({ Entry::WindowEvent::Type::Restored,width,height }); break;
+				case SIZE_MAXSHOW:entry->windowEvent({ Entry::WindowEvent::Type::MaxShow,width,height }); break;
+				case SIZE_MAXHIDE:entry->windowEvent({ Entry::WindowEvent::Type::MaxHide,width,height }); break;
 				}
 			}
+			break;
+		case WM_SYSKEYDOWN:
+		case WM_KEYDOWN:
+			entry->setKeyState(static_cast<Key>(wParam), true);
+			break;
+		case WM_SYSKEYUP:
+		case WM_KEYUP:
+			entry->setKeyState(static_cast<Key>(wParam), false);
+			break;
+		case WM_CHAR:
 			break;
 		}
 

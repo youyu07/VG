@@ -95,7 +95,7 @@ public:
 	virtual void mouseEvent(const MouseEvent& event) override
 	{
 		static bool mouseDown[3];
-		static float x, y;
+		static float x, y, initX, initY;
 
 		float dx = event.x - x;
 		float dy = event.y - y;
@@ -115,6 +115,7 @@ public:
 			break;
 		case MouseEvent::Type::LeftDown:
 			mouseDown[0] = true;
+			initX = x; initY = y;
 			break;
 		case MouseEvent::Type::RightDown:
 			mouseDown[1] = true;
@@ -124,6 +125,9 @@ public:
 			break;
 		case MouseEvent::Type::LeftUp:
 			mouseDown[0] = false;
+			if (x - initX == 0.0f && y - initY == 0.0f) {
+				renderer.click({ x,y });
+			}
 			break;
 		case MouseEvent::Type::RightUp:
 			mouseDown[1] = false;
@@ -133,7 +137,7 @@ public:
 			break;
 		case MouseEvent::Type::Move:
 			{
-				if (mouseDown[0]) {
+				if (mouseDown[0] && getKeyState(vg::Key::Alt)) {
 					camera.rotate(glm::vec3(dy, dx, 0.0f) * camera.getRotateSpeed());
 				}
 
@@ -147,7 +151,7 @@ public:
 
 	virtual void windowEvent(const WindowEvent& event) override
 	{
-		if (event.type == WindowEvent::Type::Restored) {
+		if (event.type == WindowEvent::Type::Restored || event.type == WindowEvent::Type::Maximized) {
 			renderer.resize();
 		}
 	}

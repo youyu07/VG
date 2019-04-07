@@ -32,16 +32,16 @@ namespace vg::vk
 
 	Buffer Device_T::createUniformBuffer(VkDeviceSize size, VkBool32 dynamic)
 	{
-		return std::make_unique<Buffer_T>(this, size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, dynamic ? Buffer_T::Type::CPU_TO_GPU : Buffer_T::Type::GPU_ONLY);
+		return std::make_unique<Buffer_T>(this, size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, dynamic ? MemoryUsage::CPU_TO_GPU : MemoryUsage::GPU_ONLY);
 	}
 
 	Buffer Device_T::createVertexBuffer(VkDeviceSize size, VkBool32 dynamic)
 	{
-		return std::make_unique<Buffer_T>(this, size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, dynamic ? Buffer_T::Type::CPU_TO_GPU : Buffer_T::Type::GPU_ONLY);
+		return std::make_unique<Buffer_T>(this, size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, dynamic ? MemoryUsage::CPU_TO_GPU : MemoryUsage::GPU_ONLY);
 	}
 	Buffer Device_T::createIndexBuffer(VkDeviceSize size, VkBool32 dynamic)
 	{
-		return std::make_unique<Buffer_T>(this, size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, dynamic ? Buffer_T::Type::CPU_TO_GPU : Buffer_T::Type::GPU_ONLY);
+		return std::make_unique<Buffer_T>(this, size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, dynamic ? MemoryUsage::CPU_TO_GPU : MemoryUsage::GPU_ONLY);
 	}
 
 	void Queue_T::submit(ArrayProxy<const VkCommandBuffer> cmds, ArrayProxy<const VkSemaphore> wait, ArrayProxy<const VkSemaphore> signal, VkFence fence, VkPipelineStageFlags waitStage) 
@@ -73,6 +73,9 @@ namespace vg::vk
 		return vkQueuePresentKHR(handle_, &info);
 	}
 
+
+
+	// image functions
 	static VkImageAspectFlags getAspect(VkFormat format) {
 		switch (format)
 		{
@@ -95,7 +98,6 @@ namespace vg::vk
 		uint8_t bytesPerBlock;
 	};
 
-	/// Get the details of vulkan texture formats.
 	static BlockParams getBlockParams(VkFormat format) {
 		switch (format) {
 		case VK_FORMAT_R4G4_UNORM_PACK8:return BlockParams{ 1, 1, 1 };
@@ -244,20 +246,19 @@ namespace vg::vk
 		return BlockParams{ 0, 0, 0 };
 	}
 
-	Image_T::Image_T(const Device_T* device, VkImageCreateInfo& info, VkImageViewType viewType) : device_(device), info_(info) {
+	Image_T::Image_T(const Device_T* device, VkImageCreateInfo& info, MemoryUsage memoryUsage, ViewType viewType) : device_(device), info_(info) {
 
 		VmaAllocationCreateInfo createInfo = {};
-		createInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+		createInfo.usage = static_cast<VmaMemoryUsage>(memoryUsage);
 		VmaAllocationInfo allocationInfo = {};
-
 		VK_CHECK_RESULT(vmaCreateImage(device_->allocator(), &info_, &createInfo, &handle_, &allocation_, &allocationInfo));
 
-		setupView(viewType);
+		if(viewType != ViewType::NONE)setupView(static_cast<VkImageViewType>(viewType));
 	}
 
-	Image_T::Image_T(const Device_T* device, VkImageCreateInfo& info, VkImage image, VkImageViewType viewType) : device_(device), info_(info), Handle_T(image)
+	Image_T::Image_T(const Device_T* device, VkImageCreateInfo& info, VkImage image, ViewType viewType) : device_(device), info_(info), Handle_T(image)
 	{
-		setupView(viewType);
+		if (viewType != ViewType::NONE)setupView(static_cast<VkImageViewType>(viewType));
 	}
 
 	Image_T::~Image_T()
@@ -283,7 +284,7 @@ namespace vg::vk
 
 	void Image_T::upload(CommandPool& pool, Queue& queue, const void* value) {
 		auto size = getBlockParams(info_.format).bytesPerBlock * info_.extent.width * info_.extent.height;
-		auto staging = std::make_unique<Buffer_T>(device_, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Buffer_T::Type::CPU_ONLY);
+		auto staging = std::make_unique<Buffer_T>(device_, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryUsage::CPU_ONLY);
 		staging->uploadLocal(value);
 
 		auto cmd = pool->createCommandBuffer();
@@ -305,7 +306,7 @@ namespace vg::vk
 		info.imageType = VK_IMAGE_TYPE_2D;
 		info.tiling = VK_IMAGE_TILING_OPTIMAL;
 		info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-		return std::make_unique<Image_T>(this, info, VK_IMAGE_VIEW_TYPE_2D);
+		return std::make_unique<Image_T>(this, info, MemoryUsage::GPU_ONLY);
 	}
 
 	Image Device_T::createDepthStencilAttachment(uint32_t width, uint32_t height, VkSampleCountFlagBits sample, VkFormat format)
@@ -319,7 +320,7 @@ namespace vg::vk
 		info.imageType = VK_IMAGE_TYPE_2D;
 		info.tiling = VK_IMAGE_TILING_OPTIMAL;
 		info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-		return std::make_unique<Image_T>(this, info, VK_IMAGE_VIEW_TYPE_2D);
+		return std::make_unique<Image_T>(this, info, MemoryUsage::GPU_ONLY);
 	}
 
 	Image Device_T::createColorAttachment(uint32_t width, uint32_t height, VkSampleCountFlagBits sample, VkFormat format)
@@ -332,8 +333,22 @@ namespace vg::vk
 		info.samples = sample;
 		info.imageType = VK_IMAGE_TYPE_2D;
 		info.tiling = VK_IMAGE_TILING_OPTIMAL;
-		info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-		return std::make_unique<Image_T>(this, info, VK_IMAGE_VIEW_TYPE_2D);
+		info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+		return std::make_unique<Image_T>(this, info, MemoryUsage::GPU_ONLY);
+	}
+
+	Image Device_T::createTransferImage(uint32_t width, uint32_t height, VkFormat format)
+	{
+		VkImageCreateInfo info = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+		info.format = format;
+		info.extent = { width,height,1 };
+		info.arrayLayers = 1;
+		info.mipLevels = 1;
+		info.samples = VK_SAMPLE_COUNT_1_BIT;
+		info.imageType = VK_IMAGE_TYPE_2D;
+		info.tiling = VK_IMAGE_TILING_LINEAR;
+		info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+		return std::make_unique<Image_T>(this, info, MemoryUsage::CPU_ONLY, ViewType::NONE);
 	}
 
 	void Image_T::setupView(VkImageViewType viewType)
@@ -395,7 +410,40 @@ namespace vg::vk
 		cmd->pipelineBarrier(srcStageMask, dstStageMask, VkDependencyFlags(), {}, {}, imageMemoryBarriers);
 	}
 
+	void* Image_T::map()
+	{
+		void* ptr = nullptr;
+		vmaMapMemory(device_->allocator(), allocation_, &ptr);
+		return ptr;
+	}
+	void Image_T::unmap()
+	{
+		vmaUnmapMemory(device_->allocator(), allocation_);
+	}
 
+	VkDeviceSize Image_T::size() const
+	{
+		return info_.extent.width * info_.extent.height * getBlockParams(info_.format).bytesPerBlock;
+	}
+
+	VkImageSubresourceLayers Image_T::getSubresourceLayers(uint32_t mipLevel, uint32_t baseArrayLayer, uint32_t layerCount) const
+	{
+		return { getAspect(info_.format),mipLevel,baseArrayLayer,layerCount };
+	}
+
+	VkImageSubresourceRange Image_T::getSubresourceRange() const
+	{
+		return { getAspect(info_.format), 0, info_.mipLevels, 0, info_.arrayLayers };
+	}
+
+	VkImageSubresourceRange Image_T::getSubresourceRange(uint32_t baseMipLevel, uint32_t levelCount, uint32_t baseArrayLayer, uint32_t layerCount) const
+	{
+		return { getAspect(info_.format), baseMipLevel, levelCount, baseArrayLayer, layerCount };
+	}
+
+
+
+	//swapchain functions
 	Swapchain_T::Swapchain_T(const Device_T* device, const Surface_T* surface) : device_(device),surface_(surface)
 	{
 		reCreate();
@@ -455,14 +503,16 @@ namespace vg::vk
 		return true;
 	}
 
-	Buffer_T::Buffer_T(const Device_T* device,VkDeviceSize size,VkBufferUsageFlags usage, Type type) : device_(device),size_(size)
+
+	//buffer functions
+	Buffer_T::Buffer_T(const Device_T* device,VkDeviceSize size,VkBufferUsageFlags usage, MemoryUsage memoryUsage) : device_(device),size_(size)
 	{
 		VkBufferCreateInfo info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
 		info.size = size;
 		info.usage = usage;
 
 		VmaAllocationCreateInfo createInfo = {};
-		createInfo.usage = static_cast<VmaMemoryUsage>(type);
+		createInfo.usage = static_cast<VmaMemoryUsage>(memoryUsage);
 
 		VK_CHECK_RESULT(vmaCreateBuffer(device_->allocator(), &info, &createInfo, &handle_, &allocation_, nullptr));
 	}
@@ -475,7 +525,7 @@ namespace vg::vk
 	void Buffer_T::uploadLocal(const void* value)
 	{
 		void* ptr = nullptr;
-		vmaMapMemory(device_->allocator(), allocation_, &ptr);
+		VK_CHECK_RESULT(vmaMapMemory(device_->allocator(), allocation_, &ptr));
 		memcpy(ptr, value, size_);
 		vmaUnmapMemory(device_->allocator(), allocation_);
 		vmaFlushAllocation(device_->allocator(), allocation_, 0, size_);
@@ -489,7 +539,7 @@ namespace vg::vk
 
 	void Buffer_T::upload(CommandPool& pool, Queue& queue, const void* value)
 	{
-		auto staging = std::make_unique<Buffer_T>(device_, size_, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Type::CPU_ONLY);
+		auto staging = std::make_unique<Buffer_T>(device_, size_, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryUsage::CPU_ONLY);
 		staging->uploadLocal(value);
 
 		auto cmd = pool->createCommandBuffer();
@@ -503,7 +553,7 @@ namespace vg::vk
 	void* Buffer_T::map()
 	{
 		void* ptr = nullptr;
-		vmaMapMemory(device_->allocator(), allocation_, &ptr);
+		VK_CHECK_RESULT(vmaMapMemory(device_->allocator(), allocation_, &ptr));
 		return ptr;
 	}
 	void Buffer_T::unmap()
